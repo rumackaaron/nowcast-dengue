@@ -44,8 +44,8 @@ import numpy as np
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
 from delphi.private_epidata.client.delphi_epidata_private import EpidataPrivate
-# from delphi.nowcast_norovirus_private.sensors.arch import ARCH
-# from delphi.nowcast_norovirus_private.sensors.sar3 import SAR3
+from delphi.nowcast_norovirus_private.sensors.arch import ARCH
+from delphi.nowcast_norovirus_private.sensors.sar3 import SAR3
 from delphi.nowcast_norovirus_private.util.sensors_table import SensorsTable
 import delphi.operations.secrets as secrets
 import delphi.private_operations.invisible_secrets as invisible_secrets
@@ -60,41 +60,37 @@ from delphi.utils.geo.locations import Locations
 #   rows = epidata.check(epidata.fluview('nat', epidata.range(ew1, ew2)))
 #   return max([row['issue'] for row in rows])
 
-
-def get_location_list(loc):
-  """Return the list of locations described by the given string."""
-  if loc == 'all':
-    return Locations.region_list
-  elif loc == 'hhs':
-    return Locations.hhs_list
-  elif loc == 'cen':
-    return Locations.cen_list
-  elif loc in Locations.region_list:
-    return [loc]
-  else:
-    raise UnknownLocationException('unknown location: %s' % str(loc))
-
-
-class UnknownLocationException(Exception):
-  """An Exception indicating that the given location is not known."""
+"""
+Suggestions:
+1. add paramters for functions (such as fit_loch_ness) which can specify "flu" or "norovirus" or other kinds of data
+2. move functions such as dot to utils.py to make the code more concise
+"""
 
 
 class SignalGetter:
-  """Class with static methods that implement the fetching of 
-  different data signals. Each function returns a function that 
+  """Class with static methods that implement the fetching of
+  different data signals. Each function returns a function that
   only takes a single argument:
   - weeks: an Epiweek range of weeks to fetch data for.
   """
   def __init__(self):
     pass
 
+  @staticmethod
+  def get_ght(location, epiweek, valid):
+    loc = 'US' if location == 'nat' else location
+    fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, 'norovirus')
+    return fetch
+
+
 class SensorFitting:
   def __init__(self):
     pass
-  
+
   @staticmethod
-  def fit_loch_ness(location, epiweek, name, fields, fetch, valid):
-    
+  def fit_loch_ness(location, epiweek, name, fields, fetch, valid, target_type='flu'):
+    # target_type is added for compatibility for other type of targets such as norovirus data
+
     # Helper functions
     def get_weeks(epiweek):
       ew1 = 199301
@@ -103,13 +99,13 @@ class SensorFitting:
       weeks0 = Epidata.range(ew1, ew2)
       weeks1 = Epidata.range(ew1, ew3)
       return (ew1, ew2, ew3, weeks0, weeks1)
-    
+
     def extract(rows, fields):
       data = {}
       for row in rows:
         data[row['epiweek']] = [float(row[f]) for f in fields]
       return data
-    
+
     def get_training_set_data(data):
       epiweeks = sorted(list(data.keys()))
       X = [data[ew]['x'] for ew in epiweeks]
@@ -120,7 +116,7 @@ class SensorFitting:
       ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
       auth = invisible_secrets.invisible_secrets.optum_agg
       try:
-        print("Requesting issue data for optum_agg, but it is static and this will fail.")
+        print("Requesting issue data, but no issue data for optum_agg.")
         result = EpidataPrivate.optum_agg(auth, location, weeks0, issues=ew2)
         rows = Epidata.check(result)
         unstable = extract(rows, ['ov_noro_broad'])
@@ -148,22 +144,50 @@ class SensorFitting:
         msg = 'warning: dropped %d/%d signal weeks because ov_noro_broad was unavailable'
         print(msg % (num_dropped, len(signal)))
       return get_training_set_data(data)
-    
+
+    def get_training_set_optum(location, epiweek, signal, optum_target_col='ov_noro_broad'):
+      ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
+      groundTruth = dict()
+      auth = invisible_secrets.invisible_secrets.optum_agg
+      noroData = EpidataPrivate.optum_agg(auth, location, weeks0)
+      for row in noroData['epidata']:
+        groundTruth[row['epiweek']] = row[optum_target_col]
+      data = {}
+      dropped_weeks = 0
+      for week in signal.keys():
+        # skip the week we're trying to predict
+        if week == ew3:
+          continue
+        sig = signal[week]
+        if week in groundTruth:
+          label = groundTruth[week]
+        else:
+          dropped_weeks += 1
+          continue
+        data[week] = {'x': sig, 'y': label}
+      if dropped_weeks:
+        msg = 'warning: dropped %d/%d signal weeks because Optum was unavailable'
+        print(msg % (dropped_weeks, len(signal)))
+      epiweeks = sorted(list(data.keys()))
+      X = [data[week]['x'] for week in epiweeks]
+      Y = [data[week]['y'] for week in epiweeks]
+      return (epiweeks, X, Y)
+
     def dot(*Ms):
-      """ Simple function to compute the dot product 
+      """ Simple function to compute the dot product
       for any number of arguments.
       """
       N = Ms[0]
       for M in Ms[1:]:
         N = np.dot(N, M)
       return N
-    
+
     def get_weight(ew1, ew2):
       """ This function gives the weight between two given
       epiweeks based on a function that:
         - drops sharply over the most recent ~3 weeks
         - falls off exponentially with time
-        - puts extra emphasis on the past weeks at the 
+        - puts extra emphasis on the past weeks at the
           same time of year (seasonality)
         - gives no week a weight of zero
       """
@@ -171,7 +195,7 @@ class SensorFitting:
       yr = 52.2
       hl1, hl2, bw = yr, 1, 4
       a = 0.05
-      #b = (np.cos(2 * np.pi * (dw / yr)) + 1) / 2
+      # b = (np.cos(2 * np.pi * (dw / yr)) + 1) / 2
       b = np.exp(-((min(dw % yr, yr - dw % yr) / bw) ** 2))
       c = 2 ** -(dw / hl1)
       d = 1 - 2 ** -(dw / hl2)
@@ -182,7 +206,7 @@ class SensorFitting:
       offset = flu.delta_epiweeks(200001, epiweek) % weeks_per_year
       angle = np.pi * 2 * offset / weeks_per_year
       return [np.sin(angle), np.cos(angle)]
-    
+
     def apply_model(epiweek, beta, values):
       bias0 = [1.]
       if beta.shape[0] > len(values) + 1:
@@ -212,10 +236,10 @@ class SensorFitting:
       XtXi = np.linalg.inv(dot(X.T, weights, X))
       XtY = dot(X.T, weights, Y)
       return np.dot(XtXi, XtY)
-    
+
     if type(fields) == str:
       fields = [fields]
-    
+
     ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
     rows = Epidata.check(fetch(weeks1))
     signal = extract(rows, fields)
@@ -225,16 +249,35 @@ class SensorFitting:
       raise Exception('%s unavailable on %d' % (name, ew3))
     if len(signal) < min_rows:
       raise Exception('%s available less than %d weeks' % (name, min_rows))
-    
-    epiweeks, X, Y = get_training_set(location, epiweek, signal, valid)
-    
+
+    epiweeks, X, Y = get_training_set_optum(location, epiweek, signal)
+
     min_rows = min_rows - 1
     if len(Y) < min_rows:
       raise Exception('optum_agg available less than %d weeks' % (min_rows))
-    
+
     model = get_model(ew3, epiweeks, X, Y)
     value = apply_model(ew3, model, signal[ew3])
     return value
+
+
+class UnknownLocationException(Exception):
+  """An Exception indicating that the given location is not known."""
+
+
+def get_location_list(loc: str):
+  """Return the list of locations described by the given string."""
+  loc = loc.lower()
+  if loc == 'all':
+    return Locations.region_list
+  elif loc == 'hhs':
+    return Locations.hhs_list
+  elif loc == 'cen':
+    return Locations.cen_list
+  elif loc in Locations.region_list:
+    return [loc]
+  else:
+    raise UnknownLocationException('unknown location: %s' % str(loc))
 
 
 class SensorGetter:
@@ -249,33 +292,12 @@ class SensorGetter:
     """Return a map from sensor names to sensor implementations."""
     return {
       'sar3': SensorGetter.get_sar3,
+      'ght': SensorGetter.get_ght,
     }
 
   @staticmethod
   def get_sar3(location, epiweek, valid):
     return SAR3(location).predict(epiweek, valid=valid)
-
-  @staticmethod
-  def get_ghtj(location, epiweek, valid):
-    loc = 'US' if location == 'nat' else location
-
-    def justinfun(location, epiweek):
-      # Need to set an absolute path
-      main_driver = '/home/automation/ghtj/ghtj.R'
-      args = ['Rscript', main_driver, location, str(epiweek)]
-      subprocess.check_call(args, shell=False)
-      # Need to set an absolute path
-      outputdir = '/home/automation/ghtj/output'
-      prefix = 'ghtpred'
-      predfilename = '%s/%s-%s-%d.txt' % (outputdir, prefix, loc, epiweek)
-      with open(predfilename, 'r') as f:
-        mypred = float(f.read())
-      print(mypred)
-      return mypred
-
-    # Making the single prediction now:
-    mypred = justinfun(location, epiweek)
-    return mypred
 
   # sensors using the loch ness fitting
 
@@ -308,11 +330,12 @@ class SensorUpdate:
     implementations = SensorGetter.get_sensor_implementations()
     return SensorUpdate(valid, database, implementations, Epidata)
 
-  def __init__(self, valid, database, implementations, epidata):
+  def __init__(self, valid, database, implementations, epidata, target='ov_noro_broad'):
     self.valid = valid
     self.database = database
     self.implementations = implementations
     self.epidata = epidata
+    self.target = target
 
   def update(self, sensors, first_week, last_week):
     """
@@ -323,7 +346,7 @@ class SensorUpdate:
     if last_week is None:
       # last_issue = get_most_recent_issue(self.epidata)
       # last_week = flu.add_epiweeks(last_issue, +1)
-      raise Exception("last_week must be provided for now")
+      raise Exception("last_week must be provided for now, because optum data now is static")
 
     # connect
     with self.database as database:
@@ -360,7 +383,7 @@ class SensorUpdate:
       value = None
       print(' failed: %4s %5s %d' % (name, location, test_week), ex)
     if value is not None:
-      database.insert(name, location, test_week, value)
+      database.insert(self.target, name, location, test_week, value)
     sys.stdout.flush()
 
 

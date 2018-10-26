@@ -3,24 +3,30 @@
 === Purpose ===
 ===============
 
-A simple wrapper for the `sensors` table in the Delphi database.
+A simple wrapper for the `norovirus_sensors` table in the Delphi database.
 
 
 =======================
 === Data Dictionary ===
 =======================
 
-`sensors` is the table where the data is stored.
-+----------+-------------+------+-----+---------+----------------+
-| Field    | Type        | Null | Key | Default | Extra          |
-+----------+-------------+------+-----+---------+----------------+
-| id       | int(11)     | NO   | PRI | NULL    | auto_increment |
-| name     | varchar(8)  | NO   | MUL | NULL    |                |
-| epiweek  | int(11)     | NO   | MUL | NULL    |                |
-| location | varchar(12) | YES  | MUL | NULL    |                |
-| value    | float       | NO   |     | NULL    |                |
-+----------+-------------+------+-----+---------+----------------+
+`norovirus_sensors` is the table where the data is stored.
+
++---------------+-------------+------+-----+---------+----------------+
+| Field         | Type        | Null | Key | Default | Extra          |
++---------------+-------------+------+-----+---------+----------------+
+| id            | int(11)     | NO   | PRI | NULL    | auto_increment |
+# | target_source | varchar(8)  | NO   | MUL | NULL    |                |
+# | target_column | varchar(8)  | NO   | MUL | NULL    |                |
+| name          | varchar(8)  | NO   | MUL | NULL    |                |
+| epiweek       | int(11)     | NO   | MUL | NULL    |                |
+| location      | varchar(12) | YES  | MUL | NULL    |                |
+| value         | float       | NO   |     | NULL    |                |
++---------------+-------------+------+-----+---------+----------------+
+
 id: unique identifier for each record
+# target_source: the name of the table holding the target data
+# target_column: the name of the column within that table holding the target data
 name: the name of the signal (ex: 'wiki')
 epiweek: the epiweek during which the data was collected
 location: where the data was collected (see below)
@@ -34,7 +40,7 @@ Locations vary by data source, but include (at least) all of:
 """
 
 # first party
-from delphi.nowcast.util.delphi_database import DelphiDatabase
+from delphi.nowcast_norovirus_private.util.delphi_database import DelphiDatabase
 from delphi.operations import secrets
 
 
@@ -52,19 +58,19 @@ class SensorsTable(DelphiDatabase.Table):
 
   SQL_INSERT = '''
     INSERT INTO
-      `sensors` (`name`, `location`, `epiweek`, `value`)
+      `norovirus_sensors` (`name`, `location`, `epiweek`, `value`)
     VALUES
-      (%s, %s, %s, %s)
+      (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       `value` = %s
   '''
 
-  def insert(self, name, location, epiweek, value):
+  def insert(self, target, name, location, epiweek, value):
     """
     Add a new sensor reading to the database, or update an existing record with
     the same key.
     """
-    args = (name, location, epiweek, value, value)
+    args = (target, name, location, epiweek, value, value)
     self._database.execute(SensorsTable.SQL_INSERT, args)
 
   def get_most_recent_epiweek(self, name, location):

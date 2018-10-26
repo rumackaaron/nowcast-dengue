@@ -51,14 +51,14 @@ class SensorsTable(DelphiDatabase.Table):
     SELECT
       max(`epiweek`)
     FROM
-      `sensors`
+      `norovirus_sensors`
     WHERE
       `name` = %s AND `location` = %s
   '''
 
   SQL_INSERT = '''
     INSERT INTO
-      `norovirus_sensors` (`name`, `location`, `epiweek`, `value`)
+      `norovirus_sensors` (`target`, `name`, `location`, `epiweek`, `value`)
     VALUES
       (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE

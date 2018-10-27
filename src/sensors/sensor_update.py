@@ -1,6 +1,4 @@
 """
-(Nonmembers are not allowed to view this file.)
-
 ===============
 === Purpose ===
 ===============
@@ -44,232 +42,308 @@ import numpy as np
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.private_epidata.client.delphi_epidata_private import EpidataPrivate
-from delphi.nowcast_norovirus_private.sensors.arch import ARCH
-from delphi.nowcast_norovirus_private.sensors.sar3 import SAR3
-from delphi.nowcast_norovirus_private.util.sensors_table import SensorsTable
+from delphi.nowcast.sensors.arch import ARCH
+from delphi.nowcast.sensors.sar3 import SAR3
+from delphi.nowcast.util.sensors_table import SensorsTable
 import delphi.operations.secrets as secrets
-import delphi.private_operations.invisible_secrets as invisible_secrets
 from delphi.utils.epidate import EpiDate
 import delphi.utils.epiweek as flu
 from delphi.utils.geo.locations import Locations
 
 
-# def get_most_recent_issue(epidata):
-#   # search for FluView issues within the last 10 weeks
-#   ew2 = EpiDate.today().get_ew()
-#   ew1 = flu.add_epiweeks(ew2, -9)
-#   rows = epidata.check(epidata.fluview('nat', epidata.range(ew1, ew2)))
-#   return max([row['issue'] for row in rows])
-
-"""
-Suggestions:
-1. add paramters for functions (such as fit_loch_ness) which can specify "flu" or "norovirus" or other kinds of data
-2. move functions such as dot to utils.py to make the code more concise
-"""
+def get_most_recent_issue(epidata):
+  # search for FluView issues within the last 10 weeks
+  ew2 = EpiDate.today().get_ew()
+  ew1 = flu.add_epiweeks(ew2, -9)
+  rows = epidata.check(epidata.fluview('nat', epidata.range(ew1, ew2)))
+  return max([row['issue'] for row in rows])
 
 
-class SignalGetter:
-  """Class with static methods that implement the fetching of
-  different data signals. Each function returns a function that
-  only takes a single argument:
-  - weeks: an Epiweek range of weeks to fetch data for.
-  """
-  def __init__(self):
-    pass
-
-  @staticmethod
-  def get_ght(location, epiweek, valid):
-    loc = 'US' if location == 'nat' else location
-    fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, 'norovirus')
-    return fetch
+def dot(*Ms):
+  N = Ms[0]
+  for M in Ms[1:]:
+    N = np.dot(N, M)
+  return N
 
 
-class SensorFitting:
-  def __init__(self):
-    pass
+def get_weight(ew1, ew2):
+  # I want something that:
+  #   - drops sharply over the most recent ~3 weeks
+  #   - falls off exponentially with time
+  #   - puts extra emphasis on the past weeks at the same time of year
+  #   - gives no week a weight of zero
+  dw = flu.delta_epiweeks(ew1, ew2)
+  yr = 52.2
+  hl1, hl2, bw = yr, 1, 4
+  a = 0.05
+  #b = (np.cos(2 * np.pi * (dw / yr)) + 1) / 2
+  b = np.exp(-((min(dw % yr, yr - dw % yr) / bw) ** 2))
+  c = 2 ** -(dw / hl1)
+  d = 1 - 2 ** -(dw / hl2)
+  return (a + (1 - a) * b) * c * d
 
-  @staticmethod
-  def fit_loch_ness(location, epiweek, name, fields, fetch, valid, target_type='flu'):
-    # target_type is added for compatibility for other type of targets such as norovirus data
 
-    # Helper functions
-    def get_weeks(epiweek):
-      ew1 = 199301
-      ew2 = epiweek
-      ew3 = flu.add_epiweeks(epiweek, 1)
-      weeks0 = Epidata.range(ew1, ew2)
-      weeks1 = Epidata.range(ew1, ew3)
-      return (ew1, ew2, ew3, weeks0, weeks1)
+def get_periodic_bias(epiweek):
+  weeks_per_year = 52.2
+  offset = flu.delta_epiweeks(200001, epiweek) % weeks_per_year
+  angle = np.pi * 2 * offset / weeks_per_year
+  return [np.sin(angle), np.cos(angle)]
 
-    def extract(rows, fields):
-      data = {}
-      for row in rows:
-        data[row['epiweek']] = [float(row[f]) for f in fields]
-      return data
 
-    def get_training_set_data(data):
-      epiweeks = sorted(list(data.keys()))
-      X = [data[ew]['x'] for ew in epiweeks]
-      Y = [data[ew]['y'] for ew in epiweeks]
-      return (epiweeks, X, Y)
+def get_model(ew2, epiweeks, X, Y):
+  ne, nx1, nx2, ny = len(epiweeks), len(X), len(X[0]), len(Y)
+  if ne != nx1 or nx1 != ny:
+    raise Exception('length mismatch e=%d X=%d Y=%d' % (ne, nx1, ny))
+  weights = np.diag([get_weight(ew1, ew2) for ew1 in epiweeks])
+  X = np.array(X).reshape((nx1, nx2))
+  Y = np.array(Y).reshape((ny, 1))
+  bias0 = np.ones(Y.shape)
+  if ne >= 26 and flu.delta_epiweeks(epiweeks[0], epiweeks[-1]) >= 52:
+    # constant and periodic bias
+    bias1 = np.array([get_periodic_bias(ew) for ew in epiweeks])
+    X = np.hstack((X, bias0, bias1))
+  else:
+    # constant bias only
+    X = np.hstack((X, bias0))
+  XtXi = np.linalg.inv(dot(X.T, weights, X))
+  XtY = dot(X.T, weights, Y)
+  return np.dot(XtXi, XtY)
 
-    def get_training_set(location, epiweek, signal, valid):
-      ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-      auth = invisible_secrets.invisible_secrets.optum_agg
-      try:
-        print("Requesting issue data, but no issue data for optum_agg.")
-        result = EpidataPrivate.optum_agg(auth, location, weeks0)
-        rows = Epidata.check(result)
-        unstable = extract(rows, ['ov_noro_broad'])
-      except Exception:
-        unstable = {}
-      rows = Epidata.check(EpidataPrivate.optum_agg(auth, location, weeks0))
-      stable = extract(rows, ['ov_noro_broad'])
-      data = {}
-      num_dropped = 0
-      for ew in signal.keys():
-        if ew == ew3:
-          continue
-        sig = signal[ew]
-        if ew not in unstable:
-          if valid and flu.delta_epiweeks(ew, ew3) <= 5:
-            raise Exception('unstable ov_noro_broad is not available on %d' % ew)
-          if ew not in stable:
-            num_dropped += 1
-            continue
-          ov_noro_broad = stable[ew]
-        else:
-          ov_noro_broad = unstable[ew]
-        data[ew] = {'x': sig, 'y': ov_noro_broad}
-      if num_dropped:
-        msg = 'warning: dropped %d/%d signal weeks because (w)ILI was unavailable'
-        print(msg % (num_dropped, len(signal)))
-      return get_training_set_data(data)
 
-    def get_training_set_optum(location, epiweek, signal, optum_target_col='ov_noro_broad'):
-      ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-      groundTruth = dict()
-      auth = invisible_secrets.invisible_secrets.optum_agg
-      noroData = EpidataPrivate.optum_agg(auth, location, weeks0)
-      for row in noroData['epidata']:
-        groundTruth[row['epiweek']] = row[optum_target_col]
-      data = {}
-      dropped_weeks = 0
-      for week in signal.keys():
-        # skip the week we're trying to predict
-        if week == ew3:
-          continue
-        sig = signal[week]
-        if week in groundTruth:
-          label = groundTruth[week]
-        else:
-          dropped_weeks += 1
-          continue
-        data[week] = {'x': sig, 'y': label}
-      if dropped_weeks:
-        msg = 'warning: dropped %d/%d signal weeks because Optum was unavailable'
-        print(msg % (dropped_weeks, len(signal)))
-      epiweeks = sorted(list(data.keys()))
-      X = [data[week]['x'] for week in epiweeks]
-      Y = [data[week]['y'] for week in epiweeks]
-      return (epiweeks, X, Y)
+def apply_model(epiweek, beta, values):
+  bias0 = [1.]
+  if beta.shape[0] > len(values) + 1:
+    # constant and periodic bias
+    bias1 = get_periodic_bias(epiweek)
+    obs = np.array([values + bias0 + bias1])
+  else:
+    # constant bias only
+    obs = np.array([values + bias0])
+  return float(dot(obs, beta))
 
-    def dot(*Ms):
-      """ Simple function to compute the dot product
-      for any number of arguments.
-      """
-      N = Ms[0]
-      for M in Ms[1:]:
-        N = np.dot(N, M)
-      return N
 
-    def get_weight(ew1, ew2):
-      """ This function gives the weight between two given
-      epiweeks based on a function that:
-        - drops sharply over the most recent ~3 weeks
-        - falls off exponentially with time
-        - puts extra emphasis on the past weeks at the
-          same time of year (seasonality)
-        - gives no week a weight of zero
-      """
-      dw = flu.delta_epiweeks(ew1, ew2)
-      yr = 52.2
-      hl1, hl2, bw = yr, 1, 4
-      a = 0.05
-      # b = (np.cos(2 * np.pi * (dw / yr)) + 1) / 2
-      b = np.exp(-((min(dw % yr, yr - dw % yr) / bw) ** 2))
-      c = 2 ** -(dw / hl1)
-      d = 1 - 2 ** -(dw / hl2)
-      return (a + (1 - a) * b) * c * d
+def extract(rows, fields):
+  data = {}
+  for row in rows:
+    data[row['epiweek']] = [float(row[f]) for f in fields]
+  return data
 
-    def get_periodic_bias(epiweek):
-      weeks_per_year = 52.2
-      offset = flu.delta_epiweeks(200001, epiweek) % weeks_per_year
-      angle = np.pi * 2 * offset / weeks_per_year
-      return [np.sin(angle), np.cos(angle)]
 
-    def apply_model(epiweek, beta, values):
-      bias0 = [1.]
-      if beta.shape[0] > len(values) + 1:
-        # constant and periodic bias
-        bias1 = get_periodic_bias(epiweek)
-        obs = np.array([values + bias0 + bias1])
-      else:
-        # constant bias only
-        obs = np.array([values + bias0])
-      return float(dot(obs, beta))
+def get_weeks(epiweek):
+  ew1 = 200330
+  ew2 = epiweek
+  ew3 = flu.add_epiweeks(epiweek, 1)
+  weeks0 = Epidata.range(ew1, ew2)
+  weeks1 = Epidata.range(ew1, ew3)
+  return (ew1, ew2, ew3, weeks0, weeks1)
 
-    def get_model(ew2, epiweeks, X, Y):
-      ne, nx1, nx2, ny = len(epiweeks), len(X), len(X[0]), len(Y)
-      if ne != nx1 or nx1 != ny:
-        raise Exception('length mismatch e=%d X=%d Y=%d' % (ne, nx1, ny))
-      weights = np.diag([get_weight(ew1, ew2) for ew1 in epiweeks])
-      X = np.array(X).reshape((nx1, nx2))
-      Y = np.array(Y).reshape((ny, 1))
-      bias0 = np.ones(Y.shape)
-      if ne >= 26 and flu.delta_epiweeks(epiweeks[0], epiweeks[-1]) >= 52:
-        # constant and periodic bias
-        bias1 = np.array([get_periodic_bias(ew) for ew in epiweeks])
-        X = np.hstack((X, bias0, bias1))
-      else:
-        # constant bias only
-        X = np.hstack((X, bias0))
-      XtXi = np.linalg.inv(dot(X.T, weights, X))
-      XtY = dot(X.T, weights, Y)
-      return np.dot(XtXi, XtY)
 
-    if type(fields) == str:
-      fields = [fields]
+def get_training_set_data(data):
+  epiweeks = sorted(list(data.keys()))
+  X = [data[ew]['x'] for ew in epiweeks]
+  Y = [data[ew]['y'] for ew in epiweeks]
+  return (epiweeks, X, Y)
 
-    ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-    rows = Epidata.check(fetch(weeks1))
-    signal = extract(rows, fields)
-    min_rows = 3 + len(fields)
 
-    if ew3 not in signal:
-      raise Exception('%s unavailable on %d' % (name, ew3))
-    if len(signal) < min_rows:
-      raise Exception('%s available less than %d weeks' % (name, min_rows))
+def get_training_set(location, epiweek, signal, valid):
+  ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
+  auth = secrets.api.fluview
+  try:
+    result = Epidata.fluview(location, weeks0, issues=ew2, auth=auth)
+    rows = Epidata.check(result)
+    unstable = extract(rows, ['wili'])
+  except Exception:
+    unstable = {}
+  rows = Epidata.check(Epidata.fluview(location, weeks0, auth=auth))
+  stable = extract(rows, ['wili'])
+  data = {}
+  num_dropped = 0
+  for ew in signal.keys():
+    if ew == ew3:
+      continue
+    sig = signal[ew]
+    if ew not in unstable:
+      if valid and flu.delta_epiweeks(ew, ew3) <= 5:
+        raise Exception('unstable wILI is not available on %d' % ew)
+      if ew not in stable:
+        num_dropped += 1
+        continue
+      wili = stable[ew]
+    else:
+      wili = unstable[ew]
+    data[ew] = {'x': sig, 'y': wili}
+  if num_dropped:
+    msg = 'warning: dropped %d/%d signal weeks because (w)ILI was unavailable'
+    print(msg % (num_dropped, len(signal)))
+  return get_training_set_data(data)
 
-    epiweeks, X, Y = get_training_set_optum(location, epiweek, signal)
 
-    min_rows = min_rows - 1
-    if len(Y) < min_rows:
-      raise Exception('(w)ILI available less than %d weeks' % (min_rows))
+def get_prediction(location, epiweek, name, fields, fetch, valid):
+  if type(fields) == str:
+    fields = [fields]
+  ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
+  rows = Epidata.check(fetch(weeks1))
+  signal = extract(rows, fields)
+  min_rows = 3 + len(fields)
+  if ew3 not in signal:
+    raise Exception('%s unavailable on %d' % (name, ew3))
+  if len(signal) < min_rows:
+    raise Exception('%s available less than %d weeks' % (name, min_rows))
+  epiweeks, X, Y = get_training_set(location, epiweek, signal, valid)
+  min_rows = min_rows - 1
+  if len(Y) < min_rows:
+    raise Exception('(w)ILI available less than %d weeks' % (min_rows))
+  model = get_model(ew3, epiweeks, X, Y)
+  value = apply_model(ew3, model, signal[ew3])
+  return value
 
-    model = get_model(ew3, epiweeks, X, Y)
-    value = apply_model(ew3, model, signal[ew3])
-    return value
+
+def get_gft(location, epiweek, valid):
+  def fetch(weeks):
+    # The GFT model update of 2013 significantly improved the GFT signal, so
+    # much so that training on the old data will severely hurt the predictive
+    # power of the new data. To overcome this, I basically pretend that GFT
+    # versions before and after mid-2013 are different signals.
+    if weeks['to'] >= 201340:
+      # this is the new GFT model, so throw out data from the old model
+      weeks = Epidata.range(max(weeks['from'], 201331), weeks['to'])
+    return Epidata.gft(location, weeks)
+  return get_prediction(location, epiweek, 'gft', 'num', fetch, valid)
+
+
+def get_ght(location, epiweek, valid):
+  loc = 'US' if location == 'nat' else location
+  fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, '/m/0cycc')
+  return get_prediction(location, epiweek, 'ght', 'value', fetch, valid)
+
+
+def get_ghtj(location, epiweek, valid):
+  loc = 'US' if location == 'nat' else location
+
+  def justinfun(location, epiweek):
+    # Need to set an absolute path
+    main_driver = '/home/automation/ghtj/ghtj.R'
+    args = ['Rscript', main_driver, location, str(epiweek)]
+    subprocess.check_call(args, shell=False)
+    # Need to set an absolute path
+    outputdir = '/home/automation/ghtj/output'
+    prefix = 'ghtpred'
+    predfilename = '%s/%s-%s-%d.txt' % (outputdir, prefix, loc, epiweek)
+    with open(predfilename, 'r') as f:
+      mypred = float(f.read())
+    print(mypred)
+    return mypred
+
+  # Making the single prediction now:
+  mypred = justinfun(location, epiweek)
+  return mypred
+
+
+def get_twtr(location, epiweek, valid):
+  def fetch(weeks):
+    # Impute missing weeks with 0%
+    # This is actually correct because twitter does not store rows with `num` =
+    # 0. So weeks with 0 `num` (and `percent`) are missing from the response.
+    res = Epidata.twitter(secrets.api.twitter, location, epiweeks=weeks)
+    if 'epidata' in res:
+      epiweeks = set([r['epiweek'] for r in res['epidata']])
+      first, last = 201149, weeks['to']
+      for ew in flu.range_epiweeks(first, last, inclusive=True):
+        if ew not in epiweeks:
+          res['epidata'].append({'epiweek': ew, 'percent': 0.})
+    return res
+  return get_prediction(location, epiweek, 'twtr', 'percent', fetch, valid)
+
+
+def get_wiki(location, epiweek, valid):
+  if location != 'nat':
+    raise Exception('wiki is only available for nat')
+  articles = [
+    'human_flu',
+    'influenza',
+    'influenza_a_virus',
+    'influenzavirus_a',
+    'influenzavirus_c',
+    'oseltamivir',
+    'zanamivir',
+  ]
+  hours = [17, 18, 21]
+  # There are 21 time series (7 articles, 3 hours) of N epiweeks. Each time
+  # series needs to be fetched, and then the whole dataset needs to be pivoted
+  # so that there are N rows, each with 21 values.
+  fields = ['f%d' % i for i in range(len(articles) * len(hours))]
+
+  def fetch(weeks):
+    # a map from epiweeks to a map of field-value pairs (for each article/hour)
+    data = {}
+    # field name index
+    idx = 0
+    # download each time series individually
+    for article in articles:
+      for hour in hours:
+        # fetch the data from the API
+        res = Epidata.wiki(article, epiweeks=weeks, hours=hour)
+        epidata = Epidata.check(res)
+        field_name = fields[idx]
+        idx += 1
+        # loop over rows of the response, ordered by epiweek
+        for row in epidata:
+          ew = row['epiweek']
+          if ew not in data:
+            # make a new entry for this epiweek
+            data[ew] = {'epiweek': ew}
+          # save the value of this field
+          data[ew][field_name] = row['value']
+    # convert the map to a list matching the API epidata list
+    rows = []
+    for ew in sorted(list(data.keys())):
+      rows.append(data[ew])
+    # spoof the API response
+    return {
+      'result': 1,
+      'message': None,
+      'epidata': rows,
+    }
+
+  return get_prediction(location, epiweek, 'wiki', fields, fetch, valid)
+
+
+def get_cdc(location, epiweek, valid):
+  fields = ['num2', 'num4', 'num5', 'num6', 'num7', 'num8']
+
+  def fetch(weeks):
+    # It appears that log-transformed counts provide a much better fit.
+    res = Epidata.cdc(secrets.api.cdc, weeks, location)
+    if 'epidata' in res:
+      for row in res['epidata']:
+        for col in fields:
+          row[col] = np.log(1. + row[col])
+    return res
+
+  return get_prediction(location, epiweek, 'cdc', fields, fetch, valid)
+
+
+def get_epic(location, epiweek, valid):
+  fc = Epidata.check(Epidata.delphi('ec', epiweek))[0]
+  return fc['forecast']['data'][location]['x1']['point']
+
+
+def get_quid(location, epiweek, valid):
+  fields = ['value']
+
+  def fetch(weeks):
+    res = Epidata.quidel(secrets.api.quidel, weeks, location)
+    return res
+
+  return get_prediction(location, epiweek, 'quid', fields, fetch, valid)
 
 
 def get_sar3(location, epiweek, valid):
   return SAR3(location).predict(epiweek, valid=valid)
 
 
-def get_ght(location, epiweek, valid):
-  fetch = SignalGetter.get_ght(location, epiweek, valid)
-  return SensorFitting.fit_loch_ness(location, epiweek, 'ght', 'value', fetch, valid)
+def get_arch(location, epiweek, valid):
+  return ARCH(location).predict(epiweek, valid=valid)
 
 
 class UnknownLocationException(Exception):
@@ -279,14 +353,21 @@ class UnknownLocationException(Exception):
 def get_sensor_implementations():
   """Return a map from sensor names to sensor implementations."""
   return {
-    'sar3': get_sar3,
+    'gft': get_gft,
     'ght': get_ght,
+    'ghtj': get_ghtj,
+    'twtr': get_twtr,
+    'wiki': get_wiki,
+    'cdc': get_cdc,
+    'epic': get_epic,
+    'sar3': get_sar3,
+    'arch': get_arch,
+    'quid': get_quid,
   }
 
 
-def get_location_list(loc: str):
+def get_location_list(loc):
   """Return the list of locations described by the given string."""
-  loc = loc.lower()
   if loc == 'all':
     return Locations.region_list
   elif loc == 'hhs':
@@ -301,9 +382,9 @@ def get_location_list(loc: str):
 
 class SensorUpdate:
   """
-  Produces both real-time and retrospective sensor readings for optum_agg in the US.
-  Readings (predictions of optum_agg made using raw inputs) are stored in the Delphi
-  database and are accessible via the EpidataPrivate API.
+  Produces both real-time and retrospective sensor readings for ILI in the US.
+  Readings (predictions of ILI made using raw inputs) are stored in the Delphi
+  database and are accessible via the Epidata API.
   """
 
   @staticmethod
@@ -314,20 +395,19 @@ class SensorUpdate:
     If `test_mode` is True, database changes will not be committed.
 
     If `valid` is True, be punctilious about hiding values that were not known
-    at the time (e.g. run the model with preliminary observations only). Otherwise, be
-    more lenient (e.g. fall back to final observations when preliminary data isn't
+    at the time (e.g. run the model with preliminary ILI only). Otherwise, be
+    more lenient (e.g. fall back to final ILI when preliminary ILI isn't
     available).
     """
     database = SensorsTable(test_mode=test_mode)
     implementations = get_sensor_implementations()
     return SensorUpdate(valid, database, implementations, Epidata)
 
-  def __init__(self, valid, database, implementations, epidata, target='ov_noro_broad'):
+  def __init__(self, valid, database, implementations, epidata):
     self.valid = valid
     self.database = database
     self.implementations = implementations
     self.epidata = epidata
-    self.target = target
 
   def update(self, sensors, first_week, last_week):
     """
@@ -336,9 +416,8 @@ class SensorUpdate:
 
     # most recent issue
     if last_week is None:
-      # last_issue = get_most_recent_issue(self.epidata)
-      # last_week = flu.add_epiweeks(last_issue, +1)
-      raise Exception("last_week must be provided for now, because optum data now is static")
+      last_issue = get_most_recent_issue(self.epidata)
+      last_week = flu.add_epiweeks(last_issue, +1)
 
     # connect
     with self.database as database:
@@ -375,7 +454,7 @@ class SensorUpdate:
       value = None
       print(' failed: %4s %5s %d' % (name, location, test_week), ex)
     if value is not None:
-      database.insert(self.target, name, location, test_week, value)
+      database.insert(name, location, test_week, value)
     sys.stdout.flush()
 
 
@@ -413,7 +492,7 @@ def get_argument_parser():
       '-v',
       default=False,
       action='store_true',
-      help='do not fall back to stable ov_noro_broad; require unstable ov_noro_broad')
+      help='do not fall back to stable wILI; require unstable wILI')
   return parser
 
 

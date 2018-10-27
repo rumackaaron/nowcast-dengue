@@ -11,9 +11,9 @@ import argparse
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.nowcast_norovirus_private.fusion.nowcast import Nowcast
-from delphi.nowcast_norovirus_private.util.flu_data_source import NoroDataSource
-from delphi.nowcast_norovirus_private.util.nowcasts_table import NowcastsTable
+from delphi.nowcast.fusion.nowcast import Nowcast
+from delphi.nowcast.util.flu_data_source import FluDataSource
+from delphi.nowcast.util.nowcasts_table import NowcastsTable
 from delphi.utils.epiweek import add_epiweeks, range_epiweeks
 
 
@@ -30,7 +30,7 @@ class NowcastUpdate:
     true, database changes will not be committed.
     """
     database = NowcastsTable(test_mode=test_mode)
-    data_source = NoroDataSource.new_instance()
+    data_source = FluDataSource.new_instance()
     return NowcastUpdate(database, data_source)
 
   def __init__(self, database, data_source):
@@ -94,8 +94,8 @@ def get_argument_parser():
 
 def validate_args(args):
   """Validate and return command line arguments."""
-  if (args.first is None) or (args.last is None):
-    raise Exception('`first` and `last` must be used for current Optum data')
+  if (args.first is None) ^ (args.last is None):
+    raise Exception('`first` and `last` must be used together')
   if args.first and args.first > args.last:
     raise Exception('`first` must be less than or equal to `last`')
   return args.first, args.last, args.test

@@ -88,7 +88,7 @@ class SensorFitting:
     pass
 
   @staticmethod
-  def fit_loch_ness(location, epiweek, name, fields, fetch, valid, target_type='flu'):
+  def fit_loch_ness(location, epiweek, name, fields, fetch, valid, target):
     # target_type is added for compatibility for other type of targets such as norovirus data
 
     # Helper functions
@@ -145,7 +145,7 @@ class SensorFitting:
         print(msg % (num_dropped, len(signal)))
       return get_training_set_data(data)
 
-    def get_training_set_optum(location, epiweek, signal, optum_target_col='ov_noro_broad'):
+    def get_training_set_optum(location, epiweek, signal, optum_target_col):
       ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
       groundTruth = dict()
       auth = invisible_secrets.invisible_secrets.optum_agg
@@ -250,7 +250,7 @@ class SensorFitting:
     if len(signal) < min_rows:
       raise Exception('%s available less than %d weeks' % (name, min_rows))
 
-    epiweeks, X, Y = get_training_set_optum(location, epiweek, signal)
+    epiweeks, X, Y = get_training_set_optum(location, epiweek, signal, target)
 
     min_rows = min_rows - 1
     if len(Y) < min_rows:
@@ -302,9 +302,9 @@ class SensorGetter:
   # sensors using the loch ness fitting
 
   @staticmethod
-  def get_ght(location, epiweek, valid):
+  def get_ght(location, epiweek, valid, target):
     fetch = SignalGetter.get_ght(location, epiweek, valid)
-    return SensorFitting.fit_loch_ness(location, epiweek, 'ght', 'value', fetch, valid)
+    return SensorFitting.fit_loch_ness(location, epiweek, 'ght', 'value', fetch, valid, target)
 
 
 class SensorUpdate:
@@ -315,7 +315,7 @@ class SensorUpdate:
   """
 
   @staticmethod
-  def new_instance(valid, test_mode):
+  def new_instance(valid, test_mode, target):
     """
     Return a new instance under the default configuration.
 
@@ -328,9 +328,9 @@ class SensorUpdate:
     """
     database = SensorsTable(test_mode=test_mode)
     implementations = SensorGetter.get_sensor_implementations()
-    return SensorUpdate(valid, database, implementations, Epidata)
+    return SensorUpdate(valid, database, implementations, Epidata, target)
 
-  def __init__(self, valid, database, implementations, epidata, target='ov_noro_broad'):
+  def __init__(self, valid, database, implementations, epidata, target):
     self.valid = valid
     self.database = database
     self.implementations = implementations
@@ -377,7 +377,7 @@ class SensorUpdate:
     train_week = flu.add_epiweeks(test_week, -1)
     impl = self.implementations[name]
     try:
-      value = impl(location, train_week, self.valid)
+      value = impl(location, train_week, self.valid, self.target)
       print(' %4s %5s %d -> %.3f' % (name, location, test_week, value))
     except Exception as ex:
       value = None
@@ -410,6 +410,11 @@ def get_argument_parser():
       '-w',
       type=int,
       help='epiweek override')
+  parser.add_argument(
+      '--target',
+      type=str,
+      default='ov_noro_broad',
+      help='The target column in norovirus ground truth (optum) data')
   parser.add_argument(
       '--test',
       '-t',
@@ -446,17 +451,17 @@ def validate_args(args):
   if not re.match(names_regex, args.names):
     raise ValueError('invalid sensor specification')
 
-  return args.names, first, last, args.valid, args.test
+  return args.names, first, last, args.valid, args.test, args.target
 
 
 def parse_sensor_location_pairs(names):
   return [pair.split('-') for pair in names.split(',')]
 
 
-def main(names, first, last, valid, test):
+def main(names, first, last, valid, test, target):
   """Run this script from the command line."""
   sensors = parse_sensor_location_pairs(names)
-  SensorUpdate.new_instance(valid, test).update(sensors, first, last)
+  SensorUpdate.new_instance(valid, test, target).update(sensors, first, last)
 
 
 if __name__ == '__main__':

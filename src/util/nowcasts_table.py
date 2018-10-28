@@ -39,20 +39,20 @@ class NowcastsTable(DelphiDatabase.Table):
   """A database wrapper for the `nowcasts` table."""
 
   SQL_INSERT = '''
-    INSERT INTO `nowcasts`
-      (`epiweek`, `location`, `value`, `std`)
+    INSERT INTO `norovirus_nowcasts`
+      (`target`, `epiweek`, `location`, `value`, `std`)
     VALUES
-      (%s, %s, %s, %s)
+      (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE
       value = %s, std = %s
   '''
 
-  def insert(self, epiweek, location, value, stdev):
+  def insert(self, target, epiweek, location, value, stdev):
     """
     Add a new nowcast record to the database, or update an existing record with
     the same key.
     """
-    args = (epiweek, location, value, stdev, value, stdev)
+    args = (target, epiweek, location, value, stdev, value, stdev)
     self._database.execute(NowcastsTable.SQL_INSERT, args)
 
   def set_last_update_time(self):

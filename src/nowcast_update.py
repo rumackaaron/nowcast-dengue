@@ -24,18 +24,19 @@ class NowcastUpdate:
   """
 
   @staticmethod
-  def new_instance(test_mode):
+  def new_instance(test_mode, target):
     """
     Return a new instance under the default configuration. If `test_mode` is
     true, database changes will not be committed.
     """
     database = NowcastsTable(test_mode=test_mode)
-    data_source = NoroDataSource.new_instance()
-    return NowcastUpdate(database, data_source)
+    data_source = NoroDataSource.new_instance(target)
+    return NowcastUpdate(database, data_source, target)
 
-  def __init__(self, database, data_source):
+  def __init__(self, database, data_source, target):
     self.database = database
     self.data_source = data_source
+    self.target = target
 
   def get_update_range(self, first_week, last_week):
     """Return the range of epiweeks to update."""
@@ -68,7 +69,7 @@ class NowcastUpdate:
       # save each nowcast
       for week, nowcast in zip(weeks, nowcasts):
         for location, value, stdev in nowcast:
-          db.insert(week, location, float(value), float(stdev))
+          db.insert(self.target, week, location, float(value), float(stdev))
 
       # update the timestamp
       db.set_last_update_time()
@@ -86,6 +87,11 @@ def get_argument_parser():
       type=int,
       help='nowcast a range of weeks, ending with this one')
   parser.add_argument(
+      '--target',
+      type=str,
+      default='ov_noro_broad',
+      help='The target column in norovirus ground truth (optum) data')
+  parser.add_argument(
       '--test',
       action='store_true',
       help='generate a nowcast but do not write it to the database')
@@ -98,12 +104,12 @@ def validate_args(args):
     raise Exception('`first` and `last` must be used for current Optum data')
   if args.first and args.first > args.last:
     raise Exception('`first` must be less than or equal to `last`')
-  return args.first, args.last, args.test
+  return args.first, args.last, args.test, args.target
 
 
-def main(first, last, test):
+def main(first, last, test, target):
   """Run this script from the command line."""
-  NowcastUpdate.new_instance(test).update(first, last)
+  NowcastUpdate.new_instance(test, target).update(first, last)
 
 
 if __name__ == '__main__':

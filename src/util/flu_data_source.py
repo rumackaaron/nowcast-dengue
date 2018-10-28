@@ -29,24 +29,34 @@ class NoroDataSource(DataSource):
   FIRST_DATA_EPIWEEK = 199301
   LAST_DATA_EPIWEEK = 201752
 
+  # Todo: not sure if those states are all included in optum data
+  # Todo: After determing, please move it to delphi.utils.geo.locations
+  optum_region_list = ['ca']
+  # optum_region_list = ['ak', 'al', 'ar', 'az', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'ia',
+  #   'id', 'il', 'in', 'ks', 'ky', 'la', 'ma', 'md', 'me', 'mi', 'mn', 'mo',
+  #   'ms', 'mt', 'nc', 'nd', 'ne', 'nh', 'nj', 'nm', 'nv', 'oh', 'ok', 'or',
+  #   'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'va', 'vt', 'wa', 'wi', 'wv',
+  #   'wy',]
+
   # all known sensors, past and present
   SENSORS = ['ght', 'sar3']
 
   @staticmethod
-  def new_instance():
-    return FluDataSource(EpidataPrivate, FluDataSource.SENSORS, Locations.region_list)
+  def new_instance(target):
+    return NoroDataSource(EpidataPrivate, FluDataSource.SENSORS, Locations.region_list, target)
 
-  def __init__(self, epidata, sensors, locations):
+  def __init__(self, epidata, sensors, locations, target):
     self.epidata = epidata
     self.sensors = sensors
     self.sensor_locations = locations
+    self.optum_target_col = target
     # cache for prefetching bulk flu data
     self.cache = {}
 
   @functools.lru_cache(maxsize=1)
   def get_truth_locations(self):
     """Return a list of locations in which ground truth is available."""
-    return Locations.region_list
+    return self.optum_region_list
 
   @functools.lru_cache(maxsize=1)
   def get_sensor_locations(self):
@@ -146,7 +156,7 @@ class NoroDataSource(DataSource):
         return []
       return self.epidata.check(response)
 
-    weeks = Epidata.range(FluDataSource.FIRST_DATA_EPIWEEK, epiweek)
+    weeks = Epidata.range(self.FIRST_DATA_EPIWEEK, epiweek)
     sensor_locations = set(self.get_sensor_locations())
 
     # loop over locations to avoid hitting the limit of ~3.5k rows
@@ -154,24 +164,25 @@ class NoroDataSource(DataSource):
       print('fetching %s...' % loc)
 
       # default to None to prevent cache misses on missing values
-      for week in range_epiweeks(
-          FluDataSource.FIRST_DATA_EPIWEEK, epiweek, inclusive=True):
+      for week in range_epiweeks(self.FIRST_DATA_EPIWEEK, epiweek, inclusive=True):
         for name in ['ilinet'] + self.get_sensors():
           self.add_to_cache(name, loc, week, None)
 
       # ground truth
-      response = self.epidata.fluview(loc, weeks, auth=secrets.api.fluview)
-      for row in extract(response):
+      auth = invisible_secrets.invisible_secrets.optum_agg
+      noroData = EpidataPrivate.optum_agg(auth, loc, weeks)
+      for row in noroData['epidata']:
         # skip locations with no reporters
-        if row['num_providers'] > 0:
-          self.add_to_cache('ilinet', loc, row['epiweek'], row['wili'])
+        # if row['num_providers'] > 0:
+        self.add_to_cache('ilinet', loc, row['epiweek'], row[self.optum_target_col])
 
       # sensor readings
       if loc not in sensor_locations:
         # skip withheld locations (i.e. a retrospective experiment)
         continue
       for sen in self.get_sensors():
-        response = self.epidata.sensors(secrets.api.sensors, sen, loc, weeks)
+        # Todo: build the API to get norovirus_sensors data from the table in server, as what the sensors() in Epidata do.
+        response = self.epidata.norovirus_sensors(secrets.api.sensors, self.optum_target_col, sen, loc, weeks)
         for row in extract(response):
           self.add_to_cache(sen, loc, row['epiweek'], row['value'])
 

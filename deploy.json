@@ -2,7 +2,7 @@
   "type": "delphi deploy config",
   "version": 1,
   "paths": {
-    "package": "../delphi/nowcast"
+    "package": "../delphi/nowcast_norovirus_private"
   },
   "actions": [
 

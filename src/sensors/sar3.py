@@ -62,8 +62,9 @@ class SAR3:
       N = np.dot(N, M)
     return N
 
-  def __init__(self, region):
+  def __init__(self, region, target):
     self.region = region
+    self.target = target
     weeks = Epidata.range(199301, 202330)
     auth = invisible_secrets.invisible_secrets.optum_agg
     # r0 = Epidata.check(EpidataPrivate.optum_agg(self.region, weeks, lag=0, auth=auth))
@@ -83,7 +84,7 @@ class SAR3:
       self.ew2i[ew] = i
       self.i2ew[i] = ew
     for row in r0 + r1 + r2 + rx:
-      ew, ov_noro_broad, lag = row['epiweek'], row['ov_noro_broad'], row['lag']
+      ew, observation, lag = row['epiweek'], row[self.target], row['lag']
       if ew not in self.ew2i:
         continue
       i = self.ew2i[ew]
@@ -92,7 +93,7 @@ class SAR3:
         self.valid[i] = {0: False, 1: False, 2: False, 'stable': False}
       if not (0 <= lag <= 2):
         lag = 'stable'
-      self.data[i][lag] = ov_noro_broad
+      self.data[i][lag] = observation
       self.valid[i][lag] = True
     self.weeks = sorted(list(self.data.keys()))
     for i in self.weeks:
@@ -109,7 +110,7 @@ class SAR3:
     for lag in range(3):
       if valid and not self.valid[i - lag][lag]:
         w = self.i2ew[i - lag]
-        raise Exception('missing unstable ov_noro_broad (ew=%d|lag=%d)' % (w, lag))
+        raise Exception('missing unstable %s (ew=%d|lag=%d)' % (self.target, w, lag))
       X[0, 1 + lag] = self.data[i - lag][lag]
     for holiday in range(4):
       if EW.split_epiweek(EW.add_epiweeks(ew, holiday))[1] == 1:
@@ -151,26 +152,27 @@ if __name__ == '__main__':
   # args and usage
   parser = argparse.ArgumentParser()
   parser.add_argument('epiweek', type=int, help='most recently published epiweek (best 201030+)')
-  parser.add_argument('region', type=str, help='region (nat, hhs, cen)')
+  parser.add_argument('region', type=str, help='region (state)')
+  parser.add_argument('target', type=str, help='target (e.g., ov_noro_broad)')
   args = parser.parse_args()
 
   # options
-  ew1, reg = args.epiweek, args.region
+  ew1, reg, tar = args.epiweek, args.region, args.target
   ew2 = EW.add_epiweeks(ew1, 1)
 
   # train and predict
   print('Most recent issue: %d' % ew1)
-  prediction = SAR3(reg).predict(ew1, True)
-  print('Predicted ov_noro_broad in %s on %d: %.3f' % (reg, ew2, prediction))
+  prediction = SAR3(reg, tar).predict(ew1, True)
+  print('Predicted observation for %s in %s on %d: %.3f' % (tar, reg, ew2, prediction))
   auth = invisible_secrets.invisible_secrets.optum_agg
   res = EpidataPrivate.optum_agg(auth, reg, ew2)
   if res['result'] == 1:
     row = res['epidata'][0]
     # issue = row['issue']
-    ov_noro_broad = row['ov_noro_broad']
-    err = prediction - ov_noro_broad
-    print('Actual ov_noro_broad as of %s: %.3f (err=%+.3f)' % ('static report', ov_noro_broad, err))
+    observation = row[tar]
+    err = prediction - observation
+    print('Actual observation as of %s: %.3f (err=%+.3f)' % ('static report', observation, err))
   else:
-    print('Actual ov_noro_broad: unknown')
+    print('Actual observation: unknown')
 
 # fixme may want to be forecasting proportions or rates

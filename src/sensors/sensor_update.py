@@ -296,8 +296,8 @@ class SensorGetter:
     }
 
   @staticmethod
-  def get_sar3(location, epiweek, valid):
-    return SAR3(location).predict(epiweek, valid=valid)
+  def get_sar3(location, epiweek, valid, target):
+    return SAR3(location, target).predict(epiweek, valid=valid)
 
   # sensors using the loch ness fitting
 

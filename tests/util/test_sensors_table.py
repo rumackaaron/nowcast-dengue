@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import MagicMock
 
 # py3tester coverage target
-__test_target__ = 'delphi.nowcast.util.sensors_table'
+__test_target__ = 'delphi.nowcast_norovirus_private.util.sensors_table'
 
 
 class UnitTests(unittest.TestCase):
@@ -15,8 +15,8 @@ class UnitTests(unittest.TestCase):
     """Insert a sensor reading."""
 
     database = MagicMock()
-    name, location, epiweek, value = 'wiki', 'vi', 201820, 3.14
-    SensorsTable(database=database).insert(name, location, epiweek, value)
+    target, name, location, epiweek, value = 'ov_noro_broad', 'wiki', 'vi', 201820, 3.14
+    SensorsTable(database=database).insert(target, name, location, epiweek, value)
 
     self.assertEqual(database.execute.call_count, 1)
     args, kwargs = database.execute.call_args
@@ -27,16 +27,16 @@ class UnitTests(unittest.TestCase):
     """Get the epiweek of the most recent sensor reading."""
 
     database = MagicMock()
-    name, location, epiweek = 'twtr', 'dc', 201820
+    target, name, location, epiweek = 'ov_noro_broad', 'ght', 'dc', 201820
     database.execute.return_value = [(epiweek,)]
     table = SensorsTable(database=database)
-    returned_epiweek = table.get_most_recent_epiweek(name, location)
+    returned_epiweek = table.get_most_recent_epiweek(target, name, location)
 
     self.assertEqual(database.execute.call_count, 1)
     args, kwargs = database.execute.call_args
     sql, args = args
     self.assertEqual(sql, SensorsTable.SQL_SELECT)
-    self.assertEqual(args, (name, location))
+    self.assertEqual(args, (target, name, location))
     self.assertEqual(returned_epiweek, epiweek)
 
   def test_get_connection_info(self):

@@ -3,14 +3,14 @@
 === Purpose ===
 ===============
 
-A simple wrapper for the `nowcasts` table in the Delphi database.
+A simple wrapper for the `norovirus_nowcasts` table in the Delphi database.
 
 
 =======================
 === Data Dictionary ===
 =======================
 
-Nowcasts (value and standard deviation) are stored in the `nowcasts` table.
+Nowcasts (value and standard deviation) are stored in the `norovirus_nowcasts` table.
 +----------+-------------+------+-----+---------+----------------+
 | Field    | Type        | Null | Key | Default | Extra          |
 +----------+-------------+------+-----+---------+----------------+
@@ -36,7 +36,7 @@ from delphi.operations import secrets
 
 
 class NowcastsTable(DelphiDatabase.Table):
-  """A database wrapper for the `nowcasts` table."""
+  """A database wrapper for the `norovirus_nowcasts` table."""
 
   SQL_INSERT = '''
     INSERT INTO `norovirus_nowcasts`
@@ -67,7 +67,7 @@ class NowcastsTable(DelphiDatabase.Table):
     """
     t = round(time.time())
     a, b = t // 100000, t % 100000
-    self.insert(0, 'updated', a, b)
+    self.insert('ov_noro_broad', 0, 'updated', a, b)
 
   def _get_connection_info(self):
     """Return username, password, and database name."""

@@ -6,8 +6,8 @@
 A database wrapper for arbitrary Delphi tables.
 
 This is intended to be subclassed on a per-table basis. Instances can be used
-most conveniently in the `with` statement. Here's an example for the `nowcasts`
-table (see nowcasts_table.py):
+most conveniently in the `with` statement. Here's an example for the
+`norovirus_nowcasts` table (see nowcasts_table.py):
 
   with NowcastsTable() as table:
     table.insert(epiweek, location, value, stdev)

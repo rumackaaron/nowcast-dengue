@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import MagicMock
 
 # py3tester coverage target
-__test_target__ = 'delphi.nowcast.util.delphi_database'
+__test_target__ = 'delphi.nowcast_norovirus_private.util.delphi_database'
 
 
 class UnitTests(unittest.TestCase):

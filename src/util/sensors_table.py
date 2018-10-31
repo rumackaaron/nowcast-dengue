@@ -53,7 +53,7 @@ class SensorsTable(DelphiDatabase.Table):
     FROM
       `norovirus_sensors`
     WHERE
-      `name` = %s AND `location` = %s
+      `target` = %s AND `name` = %s AND `location` = %s
   '''
 
   SQL_INSERT = '''
@@ -73,12 +73,12 @@ class SensorsTable(DelphiDatabase.Table):
     args = (target, name, location, epiweek, value, value)
     self._database.execute(SensorsTable.SQL_INSERT, args)
 
-  def get_most_recent_epiweek(self, name, location):
+  def get_most_recent_epiweek(self, target, name, location):
     """
     Return the epiweek of the most recent reading of a particular sensor and
     location. Returns None if no reading is found.
     """
-    args = (name, location)
+    args = (target, name, location)
     cursor = self._database.execute(SensorsTable.SQL_SELECT, args)
     for (epiweek,) in cursor:
       return epiweek

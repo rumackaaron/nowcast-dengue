@@ -8,11 +8,11 @@ from unittest.mock import MagicMock
 # first party
 from delphi.nowcast.fusion import covariance
 from delphi.nowcast.fusion.nowcast import Nowcast
-from delphi.nowcast.util.flu_data_source import FluDataSource
+from delphi.nowcast_norovirus_private.util.flu_data_source import FluDataSource
 from delphi.utils.geo.locations import Locations
 
 # py3tester coverage target
-__test_target__ = 'delphi.nowcast.experiments.nowcast_experiment'
+__test_target__ = 'delphi.nowcast_norovirus_private.experiments.nowcast_experiment'
 
 
 class UnitTests(unittest.TestCase):

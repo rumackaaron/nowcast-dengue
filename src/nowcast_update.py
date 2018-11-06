@@ -11,8 +11,8 @@ import argparse
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.nowcast_norovirus_private.fusion.nowcast import Nowcast
-from delphi.nowcast_norovirus_private.util.flu_data_source import NoroDataSource
+from delphi.nowcast.fusion.nowcast import Nowcast
+from delphi.nowcast_norovirus_private.util.noro_data_source import NoroDataSource
 from delphi.nowcast_norovirus_private.util.nowcasts_table import NowcastsTable
 from delphi.utils.epiweek import add_epiweeks, range_epiweeks
 

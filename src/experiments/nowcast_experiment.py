@@ -27,8 +27,9 @@ import csv
 from delphi.epidata.client.delphi_epidata import Epidata
 from delphi.nowcast.fusion import covariance
 from delphi.nowcast.fusion.nowcast import Nowcast
-from delphi.nowcast.util.flu_data_source import FluDataSource
+from delphi.nowcast_norovirus_private.util.noro_data_source import NoroDataSource
 from delphi.operations import secrets
+from delphi.private_operations import invisible_secrets
 from delphi.utils.epiweek import range_epiweeks
 from delphi.utils.geo.locations import Locations
 
@@ -53,9 +54,9 @@ class NowcastExperiment:
     Provides instances for the experiment; can be overridden in unit tests.
     """
 
-    def get_data_source(self, epidata, sensors, locations):
-      """Return a FluDataSource instance."""
-      return FluDataSource(epidata, sensors, locations)
+    def get_data_source(self, epidata, sensors, locations, target):
+      """Return a NoroDataSource instance."""
+      return NoroDataSource(epidata, sensors, locations, target)
 
     def get_nowcast(self, data_source, cov_impl):
       """Return a Nowcast instance."""
@@ -73,10 +74,10 @@ class NowcastExperiment:
   MIN_OBSERVATIONS = 5
 
   @staticmethod
-  def new_instance():
+  def new_instance(target="ov_noro_broad"):
     """Return a production-ready instance."""
     return NowcastExperiment(
-        NowcastExperiment.Provider(), Epidata, FluDataSource.new_instance())
+        NowcastExperiment.Provider(), Epidata, NoroDataSource.new_instance(target))
 
   def __init__(self, provider, epidata, data_source):
     self.provider = provider
@@ -89,18 +90,23 @@ class NowcastExperiment:
     Return a list of locations in which sensor readings should be available.
     """
 
-    # all experiments include (a copy of) the national tier
-    locations = Locations.nat_list[::]
+    # # all experiments include (a copy of) the national tier
+    # locations = Locations.nat_list[::]
 
-    if resolution in ('regional', 'state'):
-      # all types of regions
-      locations.extend(Locations.hhs_list)
-      locations.extend(Locations.cen_list)
+    # if resolution in ('regional', 'state'):
+    #   # all types of regions
+    #   locations.extend(Locations.hhs_list)
+    #   locations.extend(Locations.cen_list)
+
+    # if resolution == 'state':
+    #   # state and below
+    #   locations.extend(Locations.ny_state_list)
+    #   locations.extend(Locations.atom_list)
 
     if resolution == 'state':
-      # state and below
-      locations.extend(Locations.ny_state_list)
-      locations.extend(Locations.atom_list)
+      locations = NoroDataSource.optum_region_list
+    else:
+      raise Exception("Only state resolution is currently supported for norovirus nowcasts.")
 
     return locations
 
@@ -111,9 +117,9 @@ class NowcastExperiment:
     all_weeks = self.data_source.get_weeks()
     week_range = self.epidata.range(min(all_weeks), max(all_weeks))
 
-    # get sensor data for US nationally on those weeks
-    response = self.epidata.sensors(
-        secrets.api.sensors, sensor, 'nat', week_range)
+    # get sensor data for some state (CA) on those weeks
+    response = self.epidata.norovirus_sensors(
+        invisible_secrets.invisible_secrets.norovirus_sensors, sensor, 'ca', week_range)
     rows = self.epidata.check(response)
 
     # extract the weeks from the returned data
@@ -131,44 +137,44 @@ class NowcastExperiment:
     # all except user-specified sensor; all locations; weeks on which the
     # held-out sensor would be included in the nowcast; default covariance
     # method
-    if ablate not in FluDataSource.SENSORS:
+    if ablate not in NoroDataSource.SENSORS:
       raise UnknownSensorException('unknown sensor: %s' % ablate)
-    sensors = [s for s in FluDataSource.SENSORS if s != ablate]
-    locations = Locations.region_list
+    sensors = [s for s in NoroDataSource.SENSORS if s != ablate]
+    locations = NoroDataSource.optum_region_list
     weeks = self.get_weeks_in_nowcast(
         ablate, NowcastExperiment.MIN_OBSERVATIONS)
     cov_impl = covariance.BlendDiagonal2
     return sensors, locations, weeks, cov_impl
 
-  def get_abscission1_parameters(self, abscise1):
-    """Return parameters for the 'abscission1' experiment."""
+  # def get_abscission1_parameters(self, abscise1):
+  #   """Return parameters for the 'abscission1' experiment."""
 
-    # all sensors; user-specified location tier; weeks on which all sensors
-    # were available; default covariance method
-    sensors = FluDataSource.SENSORS
-    locations = NowcastExperiment.get_locations_at_resolution(abscise1)
-    weeks = list(range_epiweeks(201445, 201520, inclusive=True))
-    cov_impl = covariance.BlendDiagonal2
-    return sensors, locations, weeks, cov_impl
+  #   # all sensors; user-specified location tier; weeks on which all sensors
+  #   # were available; default covariance method
+  #   sensors = NoroDataSource.SENSORS
+  #   locations = NowcastExperiment.get_locations_at_resolution(abscise1)
+  #   weeks = list(range_epiweeks(201445, 201520, inclusive=True))
+  #   cov_impl = covariance.BlendDiagonal2
+  #   return sensors, locations, weeks, cov_impl
 
-  def get_abscission2_parameters(self, abscise2):
-    """Return parameters for the 'abscission2' experiment."""
+  # def get_abscission2_parameters(self, abscise2):
+  #   """Return parameters for the 'abscission2' experiment."""
 
-    # high-resolution sensors; user-specified location tier; weeks on which
-    # sensors are all available; default covariance method
-    sensors = ['twtr', 'cdc', 'sar3']
-    locations = NowcastExperiment.get_locations_at_resolution(abscise2)
-    latest_week = self.data_source.get_most_recent_issue()
-    weeks = list(range_epiweeks(201330, latest_week, inclusive=True))
-    cov_impl = covariance.BlendDiagonal2
-    return sensors, locations, weeks, cov_impl
+  #   # high-resolution sensors; user-specified location tier; weeks on which
+  #   # sensors are all available; default covariance method
+  #   sensors = ['twtr', 'cdc', 'sar3']
+  #   locations = NowcastExperiment.get_locations_at_resolution(abscise2)
+  #   latest_week = self.data_source.get_most_recent_issue()
+  #   weeks = list(range_epiweeks(201330, latest_week, inclusive=True))
+  #   cov_impl = covariance.BlendDiagonal2
+  #   return sensors, locations, weeks, cov_impl
 
   def get_covariance_parameters(self, cov_name):
     """Return parameters for the 'covariance' experiment."""
 
     # all sensors; all locations; all weeks; user-specified covariance method
     # (see ../fusion/covariance.py)
-    sensors = FluDataSource.SENSORS
+    sensors = NoroDataSource.SENSORS
     locations = Locations.region_list
     weeks = self.data_source.get_weeks()[NowcastExperiment.MIN_OBSERVATIONS:]
     cov_impl = {
@@ -182,8 +188,8 @@ class NowcastExperiment:
     """Return parameters for the 'vanilla' experiment."""
 
     # all sensors; all locations; all weeks; default covariance method
-    sensors = FluDataSource.SENSORS
-    locations = Locations.region_list
+    sensors = NoroDataSource.SENSORS
+    locations = NoroDataSource.optum_region_list
     weeks = self.data_source.get_weeks()[NowcastExperiment.MIN_OBSERVATIONS:]
     cov_impl = covariance.BlendDiagonal2
     return sensors, locations, weeks, cov_impl
@@ -199,10 +205,10 @@ class NowcastExperiment:
 
     if ablate:
       return self.get_ablation_parameters(ablate)
-    if abscise1:
-      return self.get_abscission1_parameters(abscise1)
-    if abscise2:
-      return self.get_abscission2_parameters(abscise2)
+    # if abscise1:
+    #   return self.get_abscission1_parameters(abscise1)
+    # if abscise2:
+    #   return self.get_abscission2_parameters(abscise2)
     if covariance:
       return self.get_covariance_parameters(covariance)
     if vanilla:
@@ -248,7 +254,7 @@ def get_argument_parser():
       help='output filename (*.csv)')
   parser.add_argument(
       '--ablate',
-      choices=FluDataSource.SENSORS,
+      choices=NoroDataSource.SENSORS,
       help='ablation experiment, leaving out this sensor')
   parser.add_argument(
       '--abscise1',

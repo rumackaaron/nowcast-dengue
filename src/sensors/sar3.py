@@ -67,9 +67,10 @@ class SAR3:
     self.target = target
     weeks = Epidata.range(199301, 202330)
     auth = invisible_secrets.invisible_secrets.optum_agg
-    # r0 = Epidata.check(EpidataPrivate.optum_agg(self.region, weeks, lag=0, auth=auth))
-    # r1 = Epidata.check(EpidataPrivate.optum_agg(self.region, weeks, lag=1, auth=auth))
-    # r2 = Epidata.check(EpidataPrivate.optum_agg(self.region, weeks, lag=2, auth=auth))
+    # r0 = Epidata.check(Epidata.fluview(self.region, weeks, lag=0, auth=auth))
+    # r1 = Epidata.check(Epidata.fluview(self.region, weeks, lag=1, auth=auth))
+    # r2 = Epidata.check(Epidata.fluview(self.region, weeks, lag=2, auth=auth))
+    # rx = Epidata.check(Epidata.fluview(self.region, weeks, auth=auth))
     r0 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 0)
     r1 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 1)
     r2 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 2)

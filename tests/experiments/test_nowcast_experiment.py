@@ -8,7 +8,7 @@ from unittest.mock import MagicMock
 # first party
 from delphi.nowcast.fusion import covariance
 from delphi.nowcast.fusion.nowcast import Nowcast
-from delphi.nowcast_norovirus_private.util.flu_data_source import FluDataSource
+from delphi.nowcast_norovirus_private.util.noro_data_source import NoroDataSource
 from delphi.utils.geo.locations import Locations
 
 # py3tester coverage target
@@ -47,7 +47,7 @@ class UnitTests(unittest.TestCase):
 
     with self.subTest(name='two experiments given'):
       args = new_args()
-      args.ablate = 'gft'
+      args.ablate = 'ght'
       args.abscise1 = 'state'
       with self.assertRaises(InvalidExperimentException):
         validate_args(args)
@@ -67,27 +67,27 @@ class UnitTests(unittest.TestCase):
     """Provide default instances of required objects."""
 
     provider = NowcastExperiment.Provider()
-    data_source = provider.get_data_source(None, None, None)
+    data_source = provider.get_data_source(None, None, None, None)
     nowcast = provider.get_nowcast(None, None)
 
-    self.assertIsInstance(data_source, FluDataSource)
+    self.assertIsInstance(data_source, NoroDataSource)
     self.assertIsInstance(nowcast, Nowcast)
 
   def test_get_locations_at_resolution(self):
     """Return locations needed for abscission experiments."""
 
-    with self.subTest(name='national'):
-      locations = NowcastExperiment.get_locations_at_resolution('national')
-      self.assertEqual(locations, Locations.nat_list)
+    # with self.subTest(name='national'):
+    #   locations = NowcastExperiment.get_locations_at_resolution('national')
+    #   self.assertEqual(locations, Locations.nat_list)
 
-    with self.subTest(name='regional'):
-      locations = NowcastExperiment.get_locations_at_resolution('regional')
-      expected = Locations.nat_list + Locations.hhs_list + Locations.cen_list
-      self.assertEqual(locations, expected)
+    # with self.subTest(name='regional'):
+    #   locations = NowcastExperiment.get_locations_at_resolution('regional')
+    #   expected = Locations.nat_list + Locations.hhs_list + Locations.cen_list
+    #   self.assertEqual(locations, expected)
 
     with self.subTest(name='state'):
       locations = NowcastExperiment.get_locations_at_resolution('state')
-      self.assertEqual(locations, Locations.region_list)
+      self.assertEqual(locations, NoroDataSource.optum_region_list)
 
   def test_get_weeks_in_nowcast(self):
     """Return weeks on which a sensor will be included in the nowcast."""
@@ -116,45 +116,45 @@ class UnitTests(unittest.TestCase):
   def test_get_ablation_parameters(self):
     """Return sensible ablation parameters."""
 
-    week_list = list(range(201801, 201809))
+    week_list = list(range(201401, 201410))
     self.mock_data_source.get_weeks.return_value = week_list
     self.mock_epidata.check.return_value = [{'epiweek': w} for w in week_list]
 
-    params = self.experiment.get_ablation_parameters('arch')
+    params = self.experiment.get_ablation_parameters('sar3')
     sensors, locations, weeks, cov_impl = params
 
     actual_sensors = set(sensors)
-    expected_sensors = set(FluDataSource.SENSORS) - {'arch'}
+    expected_sensors = set(NoroDataSource.SENSORS) - {'sar3'}
     self.assertEqual(actual_sensors, expected_sensors)
-    self.assertEqual(locations, Locations.region_list)
+    self.assertEqual(locations, NoroDataSource.optum_region_list)
     self.assertEqual(weeks, week_list[NowcastExperiment.MIN_OBSERVATIONS:])
     self.assertEqual(cov_impl, covariance.BlendDiagonal2)
 
-  def test_get_abscission1_parameters(self):
-    """Return sensible abscission1 parameters."""
+  # def test_get_abscission1_parameters(self):
+  #   """Return sensible abscission1 parameters."""
 
-    params = self.experiment.get_abscission1_parameters('national')
-    sensors, locations, weeks, cov_impl = params
+  #   params = self.experiment.get_abscission1_parameters('national')
+  #   sensors, locations, weeks, cov_impl = params
 
-    self.assertEqual(sensors, FluDataSource.SENSORS)
-    self.assertEqual(locations, Locations.nat_list)
-    self.assertIn(201445, weeks)
-    self.assertIn(201520, weeks)
-    self.assertEqual(cov_impl, covariance.BlendDiagonal2)
+  #   self.assertEqual(sensors, NoroDataSource.SENSORS)
+  #   self.assertEqual(locations, Locations.nat_list)
+  #   self.assertIn(201445, weeks)
+  #   self.assertIn(201520, weeks)
+  #   self.assertEqual(cov_impl, covariance.BlendDiagonal2)
 
-  def test_get_abscission2_parameters(self):
-    """Return sensible abscission2 parameters."""
+  # def test_get_abscission2_parameters(self):
+  #   """Return sensible abscission2 parameters."""
 
-    self.mock_data_source.get_most_recent_issue.return_value = 201820
+  #   self.mock_data_source.get_most_recent_issue.return_value = 201402
 
-    params = self.experiment.get_abscission2_parameters('national')
-    sensors, locations, weeks, cov_impl = params
+  #   params = self.experiment.get_abscission2_parameters('national')
+  #   sensors, locations, weeks, cov_impl = params
 
-    self.assertEqual(set(sensors), set(['cdc', 'sar3', 'twtr']))
-    self.assertEqual(locations, Locations.nat_list)
-    self.assertIn(201330, weeks)
-    self.assertIn(201820, weeks)
-    self.assertEqual(cov_impl, covariance.BlendDiagonal2)
+  #   self.assertEqual(set(sensors), set(['cdc', 'sar3', 'twtr']))
+  #   self.assertEqual(locations, Locations.nat_list)
+  #   self.assertIn(201330, weeks)
+  #   self.assertIn(201402, weeks)
+  #   self.assertEqual(cov_impl, covariance.BlendDiagonal2)
 
   def test_get_covariance_parameters(self):
     """Return sensible covariance parameters."""
@@ -165,7 +165,7 @@ class UnitTests(unittest.TestCase):
     params = self.experiment.get_covariance_parameters('bd0')
     sensors, locations, weeks, cov_impl = params
 
-    self.assertEqual(sensors, FluDataSource.SENSORS)
+    self.assertEqual(sensors, NoroDataSource.SENSORS)
     self.assertEqual(locations, Locations.region_list)
     self.assertEqual(weeks, all_weeks[NowcastExperiment.MIN_OBSERVATIONS:])
     self.assertEqual(cov_impl, covariance.BlendDiagonal0)
@@ -179,36 +179,36 @@ class UnitTests(unittest.TestCase):
     params = self.experiment.get_vanilla_parameters()
     sensors, locations, weeks, cov_impl = params
 
-    self.assertEqual(sensors, FluDataSource.SENSORS)
-    self.assertEqual(locations, Locations.region_list)
+    self.assertEqual(sensors, NoroDataSource.SENSORS)
+    self.assertEqual(locations, NoroDataSource.optum_region_list)
     self.assertEqual(weeks, all_weeks[NowcastExperiment.MIN_OBSERVATIONS:])
     self.assertEqual(cov_impl, covariance.BlendDiagonal2)
 
   def test_get_values_for_experiment(self):
     """Return parameters for each experiment type."""
 
-    week_list = list(range(201801, 201810))
+    week_list = list(range(201401, 201410))
     self.mock_data_source.get_most_recent_issue.return_value = max(week_list)
     self.mock_data_source.get_weeks.return_value = week_list
     self.mock_epidata.check.return_value = [{'epiweek': w} for w in week_list]
 
     with self.subTest(name='ablate'):
-      params = self.experiment.get_values_for_experiment(ablate='gft')
+      params = self.experiment.get_values_for_experiment(ablate='ght')
       self.assertEqual(len(params), 4)
-      self.assertNotIn('gft', params[0])
-      self.assertIn('ght', params[0])
+      self.assertNotIn('ght', params[0])
+      self.assertIn('sar3', params[0])
 
-    with self.subTest(name='abscise1'):
-      params = self.experiment.get_values_for_experiment(abscise1='regional')
-      self.assertEqual(len(params), 4)
-      self.assertNotIn('tx', params[1])
-      self.assertIn('hhs6', params[1])
+    # with self.subTest(name='abscise1'):
+    #   params = self.experiment.get_values_for_experiment(abscise1='regional')
+    #   self.assertEqual(len(params), 4)
+    #   self.assertNotIn('tx', params[1])
+    #   self.assertIn('hhs6', params[1])
 
-    with self.subTest(name='abscise2'):
-      params = self.experiment.get_values_for_experiment(abscise2='regional')
-      self.assertEqual(len(params), 4)
-      self.assertNotIn('tx', params[1])
-      self.assertIn('hhs6', params[1])
+    # with self.subTest(name='abscise2'):
+    #   params = self.experiment.get_values_for_experiment(abscise2='regional')
+    #   self.assertEqual(len(params), 4)
+    #   self.assertNotIn('tx', params[1])
+    #   self.assertIn('hhs6', params[1])
 
     with self.subTest(name='covariance'):
       params = self.experiment.get_values_for_experiment(covariance='bd1')
@@ -218,9 +218,9 @@ class UnitTests(unittest.TestCase):
     with self.subTest(name='vanilla'):
       params = self.experiment.get_values_for_experiment(vanilla=True)
       self.assertEqual(len(params), 4)
-      self.assertEqual(params[0], FluDataSource.SENSORS)
-      self.assertIn('tx', params[1])
-      self.assertEqual(params[2][-1], 201809)
+      self.assertEqual(params[0], NoroDataSource.SENSORS)
+      self.assertIn('co', params[1])
+      self.assertEqual(params[2][-1], 201409)
       self.assertEqual(params[3], covariance.BlendDiagonal2)
 
   def test_save_to_file(self):
@@ -268,8 +268,8 @@ class UnitTests(unittest.TestCase):
     args, kwargs = self.mock_provider.get_data_source.call_args
     self.assertEqual(len(args), 3)
     self.assertEqual(args[0], self.mock_epidata)
-    self.assertIn('gft', args[1])
-    self.assertIn('nv', args[2])
+    self.assertIn('ght', args[1])
+    self.assertIn('ca', args[2])
     data_source = self.mock_provider.get_data_source()
 
     self.assertTrue(self.mock_provider.get_nowcast.called)

@@ -55,7 +55,7 @@ class NowcastsTable(DelphiDatabase.Table):
     args = (target, epiweek, location, value, stdev, value, stdev)
     self._database.execute(NowcastsTable.SQL_INSERT, args)
 
-  def set_last_update_time(self):
+  def set_last_update_time(self, target):
     """
     Store the timestamp of the most recent nowcast update.
 
@@ -67,7 +67,7 @@ class NowcastsTable(DelphiDatabase.Table):
     """
     t = round(time.time())
     a, b = t // 100000, t % 100000
-    self.insert('ov_noro_broad', 0, 'updated', a, b)
+    self.insert(target, 0, 'updated', a, b)
 
   def _get_connection_info(self):
     """Return username, password, and database name."""

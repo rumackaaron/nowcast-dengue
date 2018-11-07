@@ -29,18 +29,15 @@ class NoroDataSource(DataSource):
   FIRST_DATA_EPIWEEK = 199301
   LAST_DATA_EPIWEEK = 201752
 
-  # Todo: not sure if those states are all included in optum data
+  # Make sure all the regions in the optum_region_list have corresponding sensor value in table `norovirus_sensors`
   # Todo: After determing, please move it to delphi.utils.geo.locations
-  optum_region_list = ['ca','co']
-  # optum_region_list = ['ak', 'al', 'ar', 'az', 'ca', 'co', 'ct', 'de', 'fl', 'ga', 'hi', 'ia',
-  #   'id', 'il', 'in', 'ks', 'ky', 'la', 'ma', 'md', 'me', 'mi', 'mn', 'mo',
-  #   'ms', 'mt', 'nc', 'nd', 'ne', 'nh', 'nj', 'nm', 'nv', 'oh', 'ok', 'or',
-  #   'pa', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'va', 'vt', 'wa', 'wi', 'wv',
-  #   'wy',]
-
-  norovirus_sensors_region_list = ['ca','co']
-
-  norovirus_atomic_location_list = ['ca','co']
+  optum_region_list = ['ca', 'co', 'ct']
+  # optum_region_list = ['ak', 'al', 'ar', 'az', 'ca', 'co', 'ct', 'dc', 'de', 'fl', 'ga', 'hi', 'ia',
+  #     'id', 'il', 'in', 'ks', 'ky', 'la', 'ma', 'md', 'me', 'mi', 'mn', 'mo',
+  #     'ms', 'mt', 'nc', 'nd', 'ne', 'nh', 'nj', 'nm', 'nv', 'ny', 'oh', 'ok', 'or',
+  #     'pa', 'pr', 'ri', 'sc', 'sd', 'tn', 'tx', 'ut', 'va', 'vi', 'vt', 'wa', 'wi', 'wv', 'wy']
+  norovirus_sensors_region_list = list(optum_region_list)
+  norovirus_atomic_location_list = list(optum_region_list)
 
   # all known sensors, past and present
   SENSORS = ['ght', 'sar3']
@@ -53,7 +50,7 @@ class NoroDataSource(DataSource):
     self.epidata = epidata
     self.sensors = sensors
     self.sensor_locations = locations
-    self.optum_target_col = target
+    self.target = target
     # cache for prefetching bulk flu data
     self.cache = {}
 
@@ -112,7 +109,7 @@ class NoroDataSource(DataSource):
       data = response['epidata'][0]
       # if data['num_providers'] == 0:
       #   return self.add_to_cache('optum_agg', location, epiweek, None)
-      return self.add_to_cache('optum_agg', location, epiweek, data[self.optum_target_col])
+      return self.add_to_cache('optum_agg', location, epiweek, data[self.target])
 
   @functools.lru_cache(maxsize=None)
   def get_sensor_value(self, epiweek, location, name):
@@ -174,7 +171,7 @@ class NoroDataSource(DataSource):
       for row in noroData['epidata']:
         # skip locations with no reporters
         # if row['num_providers'] > 0:
-        self.add_to_cache('optum_agg', loc, row['epiweek'], row[self.optum_target_col])
+        self.add_to_cache('optum_agg', loc, row['epiweek'], row[self.target])
 
       # sensor readings
       if loc not in sensor_locations:
@@ -182,7 +179,7 @@ class NoroDataSource(DataSource):
         continue
       for sen in self.get_sensors():
         response = self.epidata.norovirus_sensors(
-          invisible_secrets.invisible_secrets.norovirus_sensors, self.optum_target_col, sen, loc, weeks
+          invisible_secrets.invisible_secrets.norovirus_sensors, self.target, sen, loc, weeks
         )
         for row in extract(response):
           self.add_to_cache(sen, loc, row['epiweek'], row['value'])

@@ -28,13 +28,13 @@ class UnitTests(unittest.TestCase):
     """Set the timestamp of last nowcast update."""
 
     database = MagicMock()
-    NowcastsTable(database=database).set_last_update_time()
+    NowcastsTable(database=database).set_last_update_time('some_target')
 
     self.assertEqual(database.execute.call_count, 1)
     args, kwargs = database.execute.call_args
     sql, args = args
     self.assertEqual(sql, NowcastsTable.SQL_INSERT)
-    self.assertEqual(args[0], 'ov_noro_broad')
+    self.assertEqual(args[0], 'some_target')
     self.assertEqual(args[1], 0)
     self.assertEqual(args[2], 'updated')
     self.assertIsInstance(args[3], int)

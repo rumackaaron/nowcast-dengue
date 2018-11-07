@@ -72,7 +72,7 @@ class NowcastUpdate:
           db.insert(self.target, week, location, float(value), float(stdev))
 
       # update the timestamp
-      db.set_last_update_time()
+      db.set_last_update_time(self.target)
 
 
 def get_argument_parser():

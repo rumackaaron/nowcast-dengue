@@ -42,9 +42,7 @@ import numpy as np
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.private_epidata.client.delphi_epidata_private import EpidataPrivate
 import delphi.operations.secrets as secrets
-import delphi.private_operations.invisible_secrets as invisible_secrets
 import delphi.utils.epiweek as EW
 
 def mutate_rows_as_if_lagged(rows, lag):
@@ -65,16 +63,11 @@ class SAR3:
   def __init__(self, region, target):
     self.region = region
     self.target = target
-    weeks = Epidata.range(199301, 202330)
-    auth = invisible_secrets.invisible_secrets.optum_agg
-    # r0 = Epidata.check(Epidata.fluview(self.region, weeks, lag=0, auth=auth))
-    # r1 = Epidata.check(Epidata.fluview(self.region, weeks, lag=1, auth=auth))
-    # r2 = Epidata.check(Epidata.fluview(self.region, weeks, lag=2, auth=auth))
-    # rx = Epidata.check(Epidata.fluview(self.region, weeks, auth=auth))
-    r0 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 0)
-    r1 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 1)
-    r2 = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 2)
-    rx = mutate_rows_as_if_lagged(Epidata.check(EpidataPrivate.optum_agg(auth, self.region, weeks)), 1000000)
+    weeks = Epidata.range(201401, 202330)
+    r0 = Epidata.check(Epidata.paho_dengue(self.region, weeks, lag=0))
+    r1 = Epidata.check(Epidata.paho_dengue(self.region, weeks, lag=1))
+    r2 = Epidata.check(Epidata.paho_dengue(self.region, weeks, lag=2))
+    rx = Epidata.check(Epidata.paho_dengue(self.region, weeks))
     self.data = {}
     self.valid = {}
     self.ew2i, self.i2ew = {}, {}
@@ -152,9 +145,9 @@ class SAR3:
 if __name__ == '__main__':
   # args and usage
   parser = argparse.ArgumentParser()
-  parser.add_argument('epiweek', type=int, help='most recently published epiweek (best 201030+)')
+  parser.add_argument('epiweek', type=int, help='most recently published epiweek')
   parser.add_argument('region', type=str, help='region (state)')
-  parser.add_argument('target', type=str, help='target (e.g., ov_noro_broad)')
+  parser.add_argument('target', type=str, help='target (e.g., num_dengue)')
   args = parser.parse_args()
 
   # options
@@ -165,8 +158,7 @@ if __name__ == '__main__':
   print('Most recent issue: %d' % ew1)
   prediction = SAR3(reg, tar).predict(ew1, True)
   print('Predicted observation for %s in %s on %d: %.3f' % (tar, reg, ew2, prediction))
-  auth = invisible_secrets.invisible_secrets.optum_agg
-  res = EpidataPrivate.optum_agg(auth, reg, ew2)
+  res = Epidata.paho_dengue(reg, ew2)
   if res['result'] == 1:
     row = res['epidata'][0]
     # issue = row['issue']
@@ -176,4 +168,4 @@ if __name__ == '__main__':
   else:
     print('Actual observation: unknown')
 
-# fixme may want to be forecasting proportions or rates
+  # fixme want to forecast deltas, not cumulative

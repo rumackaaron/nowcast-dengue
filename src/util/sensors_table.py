@@ -3,14 +3,14 @@
 === Purpose ===
 ===============
 
-A simple wrapper for the `norovirus_sensors` table in the Delphi database.
+A simple wrapper for the `dengue_sensors` table in the Delphi database.
 
 
 =======================
 === Data Dictionary ===
 =======================
 
-`norovirus_sensors` is the table where the data is stored.
+`dengue_sensors` is the table where the data is stored.
 
 +---------------+-------------+------+-----+---------+----------------+
 | Field         | Type        | Null | Key | Default | Extra          |
@@ -33,14 +33,11 @@ location: where the data was collected (see below)
 value: the estimated final value of (w)ILI on this epiweek
 
 Locations vary by data source, but include (at least) all of:
-  - 'nat' (U.S. National): 1
-  - 'hhs[1-10]' (HHS regions): 10
-  - 'cen[1-9]' (Census regions): 9
-  - '[two-letter state]' (U.S. states and DC): 51
+  - '[two-letter country abbreviation]' (Countries in Americas)
 """
 
 # first party
-from delphi.nowcast_norovirus_private.util.delphi_database import DelphiDatabase
+from delphi.nowcast_dengue.util.delphi_database import DelphiDatabase
 from delphi.operations import secrets
 
 
@@ -51,14 +48,14 @@ class SensorsTable(DelphiDatabase.Table):
     SELECT
       max(`epiweek`)
     FROM
-      `norovirus_sensors`
+      `dengue_sensors`
     WHERE
       `target` = %s AND `name` = %s AND `location` = %s
   '''
 
   SQL_INSERT = '''
     INSERT INTO
-      `norovirus_sensors` (`target`, `name`, `location`, `epiweek`, `value`)
+      `dengue_sensors` (`target`, `name`, `location`, `epiweek`, `value`)
     VALUES
       (%s, %s, %s, %s, %s)
     ON DUPLICATE KEY UPDATE

@@ -3,14 +3,14 @@
 === Purpose ===
 ===============
 
-A simple wrapper for the `norovirus_nowcasts` table in the Delphi database.
+A simple wrapper for the `dengue_nowcasts` table in the Delphi database.
 
 
 =======================
 === Data Dictionary ===
 =======================
 
-Nowcasts (value and standard deviation) are stored in the `norovirus_nowcasts` table.
+Nowcasts (value and standard deviation) are stored in the `dengue_nowcasts` table.
 +----------+-------------+------+-----+---------+----------------+
 | Field    | Type        | Null | Key | Default | Extra          |
 +----------+-------------+------+-----+---------+----------------+
@@ -36,10 +36,10 @@ from delphi.operations import secrets
 
 
 class NowcastsTable(DelphiDatabase.Table):
-  """A database wrapper for the `norovirus_nowcasts` table."""
+  """A database wrapper for the `dengue_nowcasts` table."""
 
   SQL_INSERT = '''
-    INSERT INTO `norovirus_nowcasts`
+    INSERT INTO `dengue_nowcasts`
       (`target`, `epiweek`, `location`, `value`, `std`)
     VALUES
       (%s, %s, %s, %s, %s)

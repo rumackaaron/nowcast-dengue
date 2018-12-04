@@ -43,12 +43,10 @@ import numpy as np
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.private_epidata.client.delphi_epidata_private import EpidataPrivate
-from delphi.nowcast_norovirus_private.sensors.arch import ARCH
-from delphi.nowcast_norovirus_private.sensors.sar3 import SAR3
-from delphi.nowcast_norovirus_private.util.sensors_table import SensorsTable
+#from delphi.nowcast_dengue.sensors.arch import ARCH
+from delphi.nowcast_dengue.sensors.sar3 import SAR3
+from delphi.nowcast_dengue.util.sensors_table import SensorsTable
 import delphi.operations.secrets as secrets
-import delphi.private_operations.invisible_secrets as invisible_secrets
 from delphi.utils.epidate import EpiDate
 import delphi.utils.epiweek as flu
 from delphi.utils.geo.locations import Locations
@@ -79,7 +77,7 @@ class SignalGetter:
   @staticmethod
   def get_ght(location, epiweek, valid):
     loc = 'US' if location == 'nat' else location
-    fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, 'norovirus')
+    fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, '/m/0cycc')
     return fetch
 
 
@@ -93,7 +91,7 @@ class SensorFitting:
 
     # Helper functions
     def get_weeks(epiweek):
-      ew1 = 199301
+      ew1 = 201401
       ew2 = epiweek
       ew3 = flu.add_epiweeks(epiweek, 1)
       weeks0 = Epidata.range(ew1, ew2)
@@ -114,16 +112,14 @@ class SensorFitting:
 
     def get_training_set(location, epiweek, signal, valid):
       ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-      auth = invisible_secrets.invisible_secrets.optum_agg
       try:
-        print("Requesting issue data, but no issue data for optum_agg.")
-        result = EpidataPrivate.optum_agg(auth, location, weeks0, issues=ew2)
+        result = Epidata.paho_dengue(location, weeks0, issues=ew2)
         rows = Epidata.check(result)
-        unstable = extract(rows, ['ov_noro_broad'])
+        unstable = extract(rows, ['num_dengue'])
       except Exception:
         unstable = {}
-      rows = Epidata.check(EpidataPrivate.optum_agg(auth, location, weeks0))
-      stable = extract(rows, ['ov_noro_broad'])
+      rows = Epidata.check(Epidata.paho_dengue(location, weeks0))
+      stable = extract(rows, ['num_dengue'])
       data = {}
       num_dropped = 0
       for ew in signal.keys():
@@ -132,26 +128,25 @@ class SensorFitting:
         sig = signal[ew]
         if ew not in unstable:
           if valid and flu.delta_epiweeks(ew, ew3) <= 5:
-            raise Exception('unstable ov_noro_broad is not available on %d' % ew)
+            raise Exception('unstable num_dengue is not available on %d' % ew)
           if ew not in stable:
             num_dropped += 1
             continue
-          ov_noro_broad = stable[ew]
+          num_dengue = stable[ew]
         else:
-          ov_noro_broad = unstable[ew]
-        data[ew] = {'x': sig, 'y': ov_noro_broad}
+          num_dengue = unstable[ew]
+        data[ew] = {'x': sig, 'y': num_dengue}
       if num_dropped:
-        msg = 'warning: dropped %d/%d signal weeks because ov_noro_broad was unavailable'
+        msg = 'warning: dropped %d/%d signal weeks because num_dengue was unavailable'
         print(msg % (num_dropped, len(signal)))
       return get_training_set_data(data)
 
-    def get_training_set_optum(location, epiweek, signal, optum_target_col):
+    def get_training_set_paho(location, epiweek, signal, paho_target_col):
       ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
       groundTruth = dict()
-      auth = invisible_secrets.invisible_secrets.optum_agg
-      noroData = EpidataPrivate.optum_agg(auth, location, weeks0)
-      for row in noroData['epidata']:
-        groundTruth[row['epiweek']] = row[optum_target_col]
+      dengueData = Epidata.paho_dengue(location, weeks0)
+      for row in dengueData['epidata']:
+        groundTruth[row['epiweek']] = row[paho_target_col]
       data = {}
       dropped_weeks = 0
       for week in signal.keys():
@@ -166,7 +161,7 @@ class SensorFitting:
           continue
         data[week] = {'x': sig, 'y': label}
       if dropped_weeks:
-        msg = 'warning: dropped %d/%d signal weeks because Optum was unavailable'
+        msg = 'warning: dropped %d/%d signal weeks because PAHO was unavailable'
         print(msg % (dropped_weeks, len(signal)))
       epiweeks = sorted(list(data.keys()))
       X = [data[week]['x'] for week in epiweeks]
@@ -203,7 +198,7 @@ class SensorFitting:
 
     def get_periodic_bias(epiweek):
       weeks_per_year = 52.2
-      offset = flu.delta_epiweeks(200001, epiweek) % weeks_per_year
+      offset = flu.delta_epiweeks(201401, epiweek) % weeks_per_year
       angle = np.pi * 2 * offset / weeks_per_year
       return [np.sin(angle), np.cos(angle)]
 
@@ -250,11 +245,11 @@ class SensorFitting:
     if len(signal) < min_rows:
       raise Exception('%s available less than %d weeks' % (name, min_rows))
 
-    epiweeks, X, Y = get_training_set_optum(location, epiweek, signal, target)
+    epiweeks, X, Y = get_training_set_paho(location, epiweek, signal, target)
 
     min_rows = min_rows - 1
     if len(Y) < min_rows:
-      raise Exception('optum_agg available less than %d weeks' % (min_rows))
+      raise Exception('paho_dengue available less than %d weeks' % (min_rows))
 
     model = get_model(ew3, epiweeks, X, Y)
     value = apply_model(ew3, model, signal[ew3])
@@ -265,15 +260,12 @@ class UnknownLocationException(Exception):
   """An Exception indicating that the given location is not known."""
 
 
+# TODO: Update location list
 def get_location_list(loc: str):
   """Return the list of locations described by the given string."""
   loc = loc.lower()
   if loc == 'all':
     return Locations.region_list
-  elif loc == 'hhs':
-    return Locations.hhs_list
-  elif loc == 'cen':
-    return Locations.cen_list
   elif loc in Locations.region_list:
     return [loc]
   else:
@@ -309,9 +301,9 @@ class SensorGetter:
 
 class SensorUpdate:
   """
-  Produces both real-time and retrospective sensor readings for optum_agg in the US.
-  Readings (predictions of optum_agg made using raw inputs) are stored in the Delphi
-  database and are accessible via the EpidataPrivate API.
+  Produces both real-time and retrospective sensor readings for paho_dengue in the Americas.
+  Readings (predictions of paho_dengue made using raw inputs) are stored in the Delphi
+  database and are accessible via the Epidata API.
   """
 
   @staticmethod
@@ -344,9 +336,8 @@ class SensorUpdate:
 
     # most recent issue
     if last_week is None:
-      # last_issue = get_most_recent_issue(self.epidata)
-      # last_week = flu.add_epiweeks(last_issue, +1)
-      raise Exception("last_week must be provided for now, because optum data now is static")
+      last_issue = get_most_recent_issue(self.epidata)
+      last_week = flu.add_epiweeks(last_issue, +1)
 
     # connect
     with self.database as database:
@@ -364,8 +355,8 @@ class SensorUpdate:
             if ew1 is None:
               # If an existing sensor reading wasn't found in the database and
               # no start week was given, just assume that readings should start
-              # at 2010w40.
-              ew1 = 201040
+              # at 2014w01.
+              ew1 = 201401
               print('%s-%s not found, starting at %d' % (name, location, ew1))
 
           args = (name, location, ew1, last_week)
@@ -394,7 +385,7 @@ def get_argument_parser():
       'names',
       help=(
         'list of name-location pairs '
-        '(location can be nat/hhs/cen/state or specific location labels)'))
+        '(location is two-letter country abbreviations)'))
   parser.add_argument(
       '--first',
       '-f',
@@ -413,8 +404,8 @@ def get_argument_parser():
   parser.add_argument(
       '--target',
       type=str,
-      default='ov_noro_broad',
-      help='The target column in norovirus ground truth (optum) data')
+      default='num_dengue',
+      help='The target column in dengue ground truth (PAHO) data')
   parser.add_argument(
       '--test',
       '-t',
@@ -426,7 +417,7 @@ def get_argument_parser():
       '-v',
       default=False,
       action='store_true',
-      help='do not fall back to stable ov_noro_broad; require unstable ov_noro_broad')
+      help='do not fall back to stable num_dengue; require unstable num_dengue')
   return parser
 
 

@@ -12,8 +12,8 @@ import argparse
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
 from delphi.nowcast.fusion.nowcast import Nowcast
-from delphi.nowcast_norovirus_private.util.noro_data_source import NoroDataSource
-from delphi.nowcast_norovirus_private.util.nowcasts_table import NowcastsTable
+from delphi.nowcast_dengue.util.dengue_data_source import DengueDataSource
+from delphi.nowcast_dengue.util.nowcasts_table import NowcastsTable
 from delphi.utils.epiweek import add_epiweeks, range_epiweeks
 
 
@@ -30,7 +30,7 @@ class NowcastUpdate:
     true, database changes will not be committed.
     """
     database = NowcastsTable(test_mode=test_mode)
-    data_source = NoroDataSource.new_instance(target)
+    data_source = DengueDataSource.new_instance(target)
     return NowcastUpdate(database, data_source, target)
 
   def __init__(self, database, data_source, target):

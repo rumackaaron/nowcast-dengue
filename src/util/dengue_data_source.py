@@ -84,8 +84,9 @@ class DengueDataSource(DataSource):
   @functools.lru_cache(maxsize=1)
   def get_weeks(self):
     """Return a list of weeks on which truth and sensors are both available."""
+    latest_week = self.get_most_recent_issue()
     week_range = range_epiweeks(
-        self.FIRST_DATA_EPIWEEK, self.LAST_DATA_EPIWEEK, inclusive=True)
+        self.FIRST_DATA_EPIWEEK, latest_week, inclusive=True)
     return list(week_range)
 
   def get_truth_value(self, epiweek, location):
@@ -116,13 +117,13 @@ class DengueDataSource(DataSource):
       return self.add_to_cache(name, location, epiweek, value)
 
   @functools.lru_cache(maxsize=1)
-  def get_most_recent_issue(self):
-    """Return the most recent epiweek for which paho_dengue data is available."""
+  def get_most_recent_issue(self, location):
+    """Return the most recent epiweek for which paho_dengue data is available in given location."""
     ew2 = EpiDate.today().get_ew()
-    ew1 = add_epiweeks(ew2, -9)
-    response = self.epidata.paho_dengue('us', self.epidata.range(ew1,ew2))
-    issues = [row['issue'] for row in self.epidata.check(response)]
-    return max(issues)
+    ew1 = add_epiweeks(ew2, -12)
+    response = self.epidata.paho_dengue(location, self.epidata.range(ew1,ew2))
+    ews = [row['epiweek'] for row in self.epidata.check(response)]
+    return max(ews)
 
   def add_to_cache(self, name, location, epiweek, value):
     """Add the given value to the cache."""

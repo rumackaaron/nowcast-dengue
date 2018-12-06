@@ -1,6 +1,8 @@
 """
 (Nonmembers are not allowed to view this file.)
 
+Ignoring issues for now, not enough data to use
+Documentation from noro:
 ===============
 === Purpose ===
 ===============
@@ -44,19 +46,21 @@ import numpy as np
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
 #from delphi.nowcast_dengue.sensors.arch import ARCH
-from delphi.nowcast_dengue.sensors.sar3 import SAR3
+#from delphi.nowcast_dengue.sensors.sar3 import SAR3
+from delphi.nowcast_dengue.sensors.isch import ISCH
 from delphi.nowcast_dengue.util.sensors_table import SensorsTable
+from delphi.nowcast_dengue.util.cumulative_to_weekly import cum_to_week
 import delphi.operations.secrets as secrets
 from delphi.utils.epidate import EpiDate
 import delphi.utils.epiweek as flu
 from delphi.utils.geo.locations import Locations
 
-# def get_most_recent_issue(epidata):
-#   # search for FluView issues within the last 10 weeks
-#   ew2 = EpiDate.today().get_ew()
-#   ew1 = flu.add_epiweeks(ew2, -9)
-#   rows = epidata.check(epidata.fluview('nat', epidata.range(ew1, ew2)))
-#   return max([row['issue'] for row in rows])
+ def get_most_recent_issue(epidata):
+   # search for FluView issues within the last 10 weeks
+   ew2 = EpiDate.today().get_ew()
+   ew1 = flu.add_epiweeks(ew2, -9)
+   rows = epidata.check(epidata.fluview('nat', epidata.range(ew1, ew2)))
+   return max([row['issue'] for row in rows])
 
 """
 Suggestions:
@@ -76,8 +80,9 @@ class SignalGetter:
 
   @staticmethod
   def get_ght(location, epiweek, valid):
-    loc = 'US' if location == 'nat' else location
-    fetch = lambda weeks: Epidata.ght(secrets.api.ght, loc, weeks, '/m/0cycc')
+    if location.upper() != 'US':
+      location = location + "_"
+    fetch = lambda weeks: Epidata.ght(secrets.api.ght, location, weeks, '/m/09wsg')
     return fetch
 
 
@@ -86,7 +91,7 @@ class SensorFitting:
     pass
 
   @staticmethod
-  def fit_loch_ness(location, epiweek, name, fields, fetch, valid, target):
+  def fit_loch_ness(location, epiweek, name, field, fetch, valid, target):
     # target_type is added for compatibility for other type of targets such as norovirus data
 
     # Helper functions
@@ -98,10 +103,20 @@ class SensorFitting:
       weeks1 = Epidata.range(ew1, ew3)
       return (ew1, ew2, ew3, weeks0, weeks1)
 
-    def extract(rows, fields):
+    def extract(rows, field, to_weekly=False):
       data = {}
       for row in rows:
-        data[row['epiweek']] = [float(row[f]) for f in fields]
+        data[row['epiweek']] = float(row[field])
+      if not to_weekly:
+        return data
+
+      ews = list(data.keys())
+      c_vals = [data[ew] for ew in ews]
+      w_vals = cum_to_week(ews, c_vals)
+      data = {}
+      ews = sorted(ews)
+      for i in range(len(ews)):
+        data[ews[i]] = w_vals[i]
       return data
 
     def get_training_set_data(data):
@@ -112,61 +127,17 @@ class SensorFitting:
 
     def get_training_set(location, epiweek, signal, valid):
       ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-      try:
-        result = Epidata.paho_dengue(location, weeks0, issues=ew2)
-        rows = Epidata.check(result)
-        unstable = extract(rows, ['num_dengue'])
-      except Exception:
-        unstable = {}
-      rows = Epidata.check(Epidata.paho_dengue(location, weeks0))
-      stable = extract(rows, ['num_dengue'])
+      result = Epidata.paho_dengue(location, weeks0)
+      rows = Epidata.check(result)
+      stable = extract(rows, 'num_dengue', to_weekly=True)
       data = {}
-      num_dropped = 0
       for ew in signal.keys():
-        if ew == ew3:
+        if ew == ew3 or ew not in stable:
           continue
         sig = signal[ew]
-        if ew not in unstable:
-          if valid and flu.delta_epiweeks(ew, ew3) <= 5:
-            raise Exception('unstable num_dengue is not available on %d' % ew)
-          if ew not in stable:
-            num_dropped += 1
-            continue
-          num_dengue = stable[ew]
-        else:
-          num_dengue = unstable[ew]
+        num_dengue = stable[ew]
         data[ew] = {'x': sig, 'y': num_dengue}
-      if num_dropped:
-        msg = 'warning: dropped %d/%d signal weeks because num_dengue was unavailable'
-        print(msg % (num_dropped, len(signal)))
       return get_training_set_data(data)
-
-    def get_training_set_paho(location, epiweek, signal, paho_target_col):
-      ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
-      groundTruth = dict()
-      dengueData = Epidata.paho_dengue(location, weeks0)
-      for row in dengueData['epidata']:
-        groundTruth[row['epiweek']] = row[paho_target_col]
-      data = {}
-      dropped_weeks = 0
-      for week in signal.keys():
-        # skip the week we're trying to predict
-        if week == ew3:
-          continue
-        sig = signal[week]
-        if week in groundTruth:
-          label = groundTruth[week]
-        else:
-          dropped_weeks += 1
-          continue
-        data[week] = {'x': sig, 'y': label}
-      if dropped_weeks:
-        msg = 'warning: dropped %d/%d signal weeks because PAHO was unavailable'
-        print(msg % (dropped_weeks, len(signal)))
-      epiweeks = sorted(list(data.keys()))
-      X = [data[week]['x'] for week in epiweeks]
-      Y = [data[week]['y'] for week in epiweeks]
-      return (epiweeks, X, Y)
 
     def dot(*Ms):
       """ Simple function to compute the dot product
@@ -214,7 +185,11 @@ class SensorFitting:
       return float(dot(obs, beta))
 
     def get_model(ew2, epiweeks, X, Y):
-      ne, nx1, nx2, ny = len(epiweeks), len(X), len(X[0]), len(Y)
+      ne, nx1, ny = len(epiweeks), len(X), len(Y)
+      if type(X[0]) == type([]):
+        nx2 = len(X[0])
+      else:
+        nx2 = 1
       if ne != nx1 or nx1 != ny:
         raise Exception('length mismatch e=%d X=%d Y=%d' % (ne, nx1, ny))
       weights = np.diag([get_weight(ew1, ew2) for ew1 in epiweeks])
@@ -232,27 +207,24 @@ class SensorFitting:
       XtY = dot(X.T, weights, Y)
       return np.dot(XtXi, XtY)
 
-    if type(fields) == str:
-      fields = [fields]
-
     ew1, ew2, ew3, weeks0, weeks1 = get_weeks(epiweek)
     rows = Epidata.check(fetch(weeks1))
-    signal = extract(rows, fields)
-    min_rows = 3 + len(fields)
+    signal = extract(rows, field)
+    min_rows = 4
 
     if ew3 not in signal:
       raise Exception('%s unavailable on %d' % (name, ew3))
     if len(signal) < min_rows:
       raise Exception('%s available less than %d weeks' % (name, min_rows))
 
-    epiweeks, X, Y = get_training_set_paho(location, epiweek, signal, target)
+    epiweeks, X, Y = get_training_set(location, epiweek, signal, target)
 
     min_rows = min_rows - 1
     if len(Y) < min_rows:
       raise Exception('paho_dengue available less than %d weeks' % (min_rows))
 
     model = get_model(ew3, epiweeks, X, Y)
-    value = apply_model(ew3, model, signal[ew3])
+    value = apply_model(ew3, model, [signal[ew3]])
     return value
 
 
@@ -260,13 +232,13 @@ class UnknownLocationException(Exception):
   """An Exception indicating that the given location is not known."""
 
 
-# TODO: Update location list
 def get_location_list(loc: str):
+  locs = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.split(',')
   """Return the list of locations described by the given string."""
   loc = loc.lower()
   if loc == 'all':
-    return Locations.region_list
-  elif loc in Locations.region_list:
+    return locs
+  elif loc in locs:
     return [loc]
   else:
     raise UnknownLocationException('unknown location: %s' % str(loc))
@@ -283,13 +255,13 @@ class SensorGetter:
   def get_sensor_implementations():
     """Return a map from sensor names to sensor implementations."""
     return {
-      'sar3': SensorGetter.get_sar3,
+      'isch': SensorGetter.get_isch,
       'ght': SensorGetter.get_ght,
     }
 
   @staticmethod
-  def get_sar3(location, epiweek, valid, target):
-    return SAR3(location, target).predict(epiweek, valid=valid)
+  def get_isch(location, epiweek, valid, target):
+    return ISCH(location, target).predict(epiweek, valid=valid)
 
   # sensors using the loch ness fitting
 

@@ -89,15 +89,18 @@ class ISCH:
     self.weeks = sorted(list(self.data.keys()))
     self.dds = DengueDataSource.new_instance(target)
 
-  def _get_features(self, ew, signal_to_truth_shift=0, valid=False):
+  def _get_features(self, ew, signal_to_truth_shift=0, valid=False, mask=np.ones((10),dtype=bool)):
     X = np.zeros((1, 10))
     i = self.ew2i[ew]
     X[0, 0] = 1
     for lag in range(3):
         if valid and not self.valid[i-lag][lag]:
-            w = self.i2ew[i-lag]
-            raise Exception('missing unstable wILI (ew=%d|lag=%d)' % (w, lag))
-        X[0, 1 + lag] = self.data[i-lag-signal_to_truth_shift]['stable']
+          w = self.i2ew[i-lag]
+          raise Exception('missing unstable wILI (ew=%d|lag=%d)' % (w, lag))
+        try:
+          X[0, 1 + lag] = self.data[i-lag-signal_to_truth_shift]['stable']
+        except Exception:
+          X[0, 1 + lag] = np.nan
     for holiday in range(4):
       if EW.split_epiweek(EW.add_epiweeks(ew, holiday))[1] == 1:
         X[0, 4 + holiday] = 1
@@ -107,24 +110,46 @@ class ISCH:
     X[0, 8] = np.sin(offset)
     X[0, 9] = np.cos(offset)
     # todo linear time trend covariate?
-    return X
+    return X[:,mask]
+
+  def feature_indices(self, epiweek, signal_to_truth_shift=0, valid=False):
+    # Maybe some data is missing (ex. have t-1 and t-3 but not t-2)
+    # Return indices of feature array that are valid in test features
+    result = np.ones((10), dtype=bool)
+    i = self.ew2i[epiweek] - 1
+    for lag in range(3):
+      if i - lag - signal_to_truth_shift not in self.data:
+        result[1+lag] = 0
+      elif 'stable' not in self.data[i-lag-signal_to_truth_shift]:
+        result[1+lag] = 0
+    result[4:8] = False
+    return result
 
   def train(self, epiweek):
     if epiweek not in self.ew2i:
       raise Exception('not predicting during this period')
     most_recent_issue = self.dds.get_most_recent_issue(self.region)
     i2 = min(self.ew2i[epiweek] - 5, self.ew2i[most_recent_issue]-1)
-    signal_to_truth_shift = EW.delta_epiweeks(most_recent_issue, epiweek)
+    signal_to_truth_shift = max(0,EW.delta_epiweeks(most_recent_issue, epiweek))
     self.stts = signal_to_truth_shift
     i1 = self.weeks[2+signal_to_truth_shift]
     ew1, ew2 = self.i2ew[i1], self.i2ew[i2]
     num_weeks = i2 - i1
-    X, Y = np.zeros((num_weeks, 10)), np.zeros((num_weeks, 1))
+    feature_indices = self.feature_indices(epiweek, signal_to_truth_shift=signal_to_truth_shift, valid=False)
+    X, Y = np.zeros((num_weeks, np.sum(feature_indices))), np.zeros((num_weeks, 1))
     r = 0
     for i in range(i1, i2):
-      X[r, :] = self._get_features(self.i2ew[i], signal_to_truth_shift=signal_to_truth_shift, valid=False)
-      Y[r, 0] = self.data[i + 1]['stable']
-      r += 1
+      try:
+        newx = self._get_features(self.i2ew[i], signal_to_truth_shift=signal_to_truth_shift, valid=False, mask=feature_indices)
+        newy = self.data[i + 1]['stable']
+        if np.all(np.isfinite(newx)):
+          X[r, :] = newx
+          Y[r, 0] = newy
+          r += 1
+      except Exception:
+        pass
+    X = X[:r,:]
+    Y = Y[:r,:]
     self.model = ISCH.dot(np.linalg.inv(ISCH.dot(X.T, X)), X.T, Y)
     self.training_week = epiweek
     return (X, Y, self.model)
@@ -134,7 +159,8 @@ class ISCH:
       self.train(epiweek)
     if self.training_week > epiweek:
       raise Exception('trained on future data')
-    X = self._get_features(epiweek, signal_to_truth_shift=self.stts, valid=valid)
+    feature_indices = self.feature_indices(epiweek, signal_to_truth_shift=self.stts, valid=valid)
+    X = self._get_features(epiweek, signal_to_truth_shift=self.stts, valid=valid, mask=feature_indices)
     return float(ISCH.dot(X, self.model)[0, 0])
 
 
@@ -143,7 +169,7 @@ if __name__ == '__main__':
   parser = argparse.ArgumentParser()
   parser.add_argument('epiweek', type=int, help='most recently published epiweek (best 201030+)')
   parser.add_argument('region', type=str, help='region (state)')
-  parser.add_argument('target', type=str, help='target (e.g., ov_noro_broad)')
+  parser.add_argument('target', type=str, help='target (e.g., num_dengue)')
   args = parser.parse_args()
 
   # options
@@ -154,8 +180,7 @@ if __name__ == '__main__':
   print('Most recent issue: %d' % ew1)
   prediction = ISCH(reg, tar).predict(ew1, True)
   print('Predicted observation for %s in %s on %d: %.3f' % (tar, reg, ew2, prediction))
-  auth = invisible_secrets.invisible_secrets.optum_agg
-  res = EpidataPrivate.optum_agg(auth, reg, ew2)
+  res = Epidata.paho_dengue(reg, ew2)
   if res['result'] == 1:
     row = res['epidata'][0]
     # issue = row['issue']
@@ -165,5 +190,5 @@ if __name__ == '__main__':
   else:
     print('Actual observation: unknown')
 
-# fixme may want to be forecasting proportions or rates
 # todo may want Loch Ness intercept sensor instead or in addition to this one
+# fixme displaying result is comparing weekly predicted to cumulative observed

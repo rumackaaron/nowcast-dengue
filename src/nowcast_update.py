@@ -11,7 +11,7 @@ import argparse
 
 # first party
 from delphi.epidata.client.delphi_epidata import Epidata
-from delphi.nowcast.fusion.nowcast import Nowcast
+from delphi.nowcast_dengue.fusion.nowcast import Nowcast
 from delphi.nowcast_dengue.util.dengue_data_source import DengueDataSource
 from delphi.nowcast_dengue.util.nowcasts_table import NowcastsTable
 from delphi.utils.epiweek import add_epiweeks, range_epiweeks

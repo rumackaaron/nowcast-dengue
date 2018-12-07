@@ -32,7 +32,7 @@ class DengueDataSource(DataSource):
   paho_atomic_region_list = list(paho_region_list)
 
   # all known sensors, past and present
-  SENSORS = ['ght', 'sar3']
+  SENSORS = ['ght', 'isch']
 
   @staticmethod
   def new_instance(target):
@@ -61,7 +61,7 @@ class DengueDataSource(DataSource):
     """Return a tuple of locations which did not report on the given week."""
 
     # only return missing atoms, i.e. locations that can't be further split
-    atomic_locations = set(DengueDataSource.paho_atomic_location_list)
+    atomic_locations = set(DengueDataSource.paho_atomic_region_list)
 
     available_locations = []
     for loc in atomic_locations:
@@ -84,7 +84,8 @@ class DengueDataSource(DataSource):
   @functools.lru_cache(maxsize=1)
   def get_weeks(self):
     """Return a list of weeks on which truth and sensors are both available."""
-    latest_week = self.get_most_recent_issue()
+    latest_week = EpiDate.today().get_ew()
+    latest_week = add_epiweeks(latest_week,-1)
     week_range = range_epiweeks(
         self.FIRST_DATA_EPIWEEK, latest_week, inclusive=True)
     return list(week_range)
@@ -109,7 +110,7 @@ class DengueDataSource(DataSource):
       return self.cache[name][location][epiweek]
     except KeyError:
       print('cache miss: get_sensor_value', epiweek, location, name)
-      response = self.epidata.dengue_sensors(
+      response = self.epidata.dengue_sensors( secrets.api.sensors,
           name, location, epiweek)
       if response['result'] != 1:
         return self.add_to_cache(name, location, epiweek, None)
@@ -170,7 +171,7 @@ class DengueDataSource(DataSource):
         continue
       for sen in self.get_sensors():
         response = self.epidata.dengue_sensors(
-          self.target, sen, loc, weeks
+          secrets.api.sensors, sen, loc, weeks
         )
         for row in extract(response):
           self.add_to_cache(sen, loc, row['epiweek'], row['value'])

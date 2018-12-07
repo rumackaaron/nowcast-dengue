@@ -116,13 +116,13 @@ class ISCH:
     # Maybe some data is missing (ex. have t-1 and t-3 but not t-2)
     # Return indices of feature array that are valid in test features
     result = np.ones((10), dtype=bool)
-    i = self.ew2i[epiweek] - 1
+    i = self.ew2i[epiweek]
     for lag in range(3):
       if i - lag - signal_to_truth_shift not in self.data:
         result[1+lag] = 0
       elif 'stable' not in self.data[i-lag-signal_to_truth_shift]:
         result[1+lag] = 0
-    result[4:8] = False
+    result[4:8] = 0
     return result
 
   def train(self, epiweek):
@@ -135,6 +135,8 @@ class ISCH:
     i1 = self.weeks[2+signal_to_truth_shift]
     ew1, ew2 = self.i2ew[i1], self.i2ew[i2]
     num_weeks = i2 - i1
+    if num_weeks <= 0:
+      raise Exception('not predicting during this period')
     feature_indices = self.feature_indices(epiweek, signal_to_truth_shift=signal_to_truth_shift, valid=False)
     X, Y = np.zeros((num_weeks, np.sum(feature_indices))), np.zeros((num_weeks, 1))
     r = 0
@@ -192,3 +194,4 @@ if __name__ == '__main__':
 
 # todo may want Loch Ness intercept sensor instead or in addition to this one
 # fixme displaying result is comparing weekly predicted to cumulative observed
+# fixme may have missing data problems if trained on one week and predicted on another

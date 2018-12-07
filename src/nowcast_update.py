@@ -3,7 +3,7 @@
 === Purpose ===
 ===============
 
-Nowcasting Influenza-like Illness via sensor fusion of digital surveillance!
+Nowcasting Dengue via sensor fusion of digital surveillance!
 """
 
 # standard library
@@ -89,8 +89,8 @@ def get_argument_parser():
   parser.add_argument(
       '--target',
       type=str,
-      default='ov_noro_broad',
-      help='The target column in norovirus ground truth (optum) data')
+      default='num_dengue',
+      help='The target column in dengue ground truth (PAHO) data')
   parser.add_argument(
       '--test',
       action='store_true',
@@ -101,7 +101,7 @@ def get_argument_parser():
 def validate_args(args):
   """Validate and return command line arguments."""
   if (args.first is None) or (args.last is None):
-    raise Exception('`first` and `last` must be used for current Optum data')
+    raise Exception('`first` and `last` must be used for current PAHO data')
   if args.first and args.first > args.last:
     raise Exception('`first` must be less than or equal to `last`')
   return args.first, args.last, args.test, args.target

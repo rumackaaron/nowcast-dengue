@@ -55,7 +55,7 @@ from delphi.utils.epidate import EpiDate
 import delphi.utils.epiweek as flu
 from delphi.utils.geo.locations import Locations
 
- def get_most_recent_issue(epidata):
+def get_most_recent_issue(epidata):
    # search for FluView issues within the last 10 weeks
    ew2 = EpiDate.today().get_ew()
    ew1 = flu.add_epiweeks(ew2, -9)
@@ -233,7 +233,7 @@ class UnknownLocationException(Exception):
 
 
 def get_location_list(loc: str):
-  locs = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.split(',')
+  locs = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.lower().split(',')
   """Return the list of locations described by the given string."""
   loc = loc.lower()
   if loc == 'all':

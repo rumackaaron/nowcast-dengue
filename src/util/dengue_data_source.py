@@ -28,7 +28,7 @@ class DengueDataSource(DataSource):
 
   # Make sure all the regions in the paho_region_list have corresponding sensor value in table `dengue_sensors`
   # Todo: After determing, please move it to delphi.utils.geo.locations
-  paho_region_list = ['ca', 'us', 'br', 'mx', 'ar', 've']
+  paho_region_list = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.lower().split(',')
   paho_atomic_region_list = list(paho_region_list)
 
   # all known sensors, past and present
@@ -120,7 +120,7 @@ class DengueDataSource(DataSource):
   def get_most_recent_issue(self, location):
     """Return the most recent epiweek for which paho_dengue data is available in given location."""
     ew2 = EpiDate.today().get_ew()
-    ew1 = add_epiweeks(ew2, -12)
+    ew1 = add_epiweeks(ew2, -52)
     response = self.epidata.paho_dengue(location, self.epidata.range(ew1,ew2))
     ews = [row['epiweek'] for row in self.epidata.check(response)]
     return max(ews)

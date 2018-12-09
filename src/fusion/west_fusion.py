@@ -28,7 +28,7 @@ import delphi.nowcast_dengue.fusion.fusion as fusion
 from delphi.utils.geo.locations import Locations
 from delphi.utils.geo.populations import get_population
 
-west_locations = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.split(',')
+west_locations = 'AG,AI,AW,BB,BS,CL,CU,GD,GF,GP,GY,HT,KN,LC,MQ,PA,SR,TC,TT,VC,AR,BM,BO,BR,BZ,CA,CO,CR,DM,DO,EC,GT,HN,JM,KY,MS,MX,NI,PE,PR,PY,SV,US,UY,VE'.lower().split(',')
 
 class WestFusion:
   """Prepares for sensor fusion of signals based on Western Hemisphere countries and states."""

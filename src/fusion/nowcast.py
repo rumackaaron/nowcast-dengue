@@ -19,6 +19,7 @@ from delphi.nowcast_dengue.fusion import covariance
 from delphi.nowcast_dengue.fusion import fusion
 from delphi.nowcast_dengue.fusion.west_fusion import WestFusion
 from delphi.utils.epiweek import split_epiweek
+from delphi.nowcast_dengue.util.cumulative_to_weekly import cum_to_week
 
 
 class DataSource(abc.ABC):
@@ -165,10 +166,15 @@ class Nowcast:
     inputs = list(itertools.product(sensors, locations))
     for col, (sen, loc) in enumerate(inputs):
 
+      data = {}
+      for row, week in enumerate(train_weeks):
+        data[week] = self.data_source.get_truth_value(week, loc)
+      w_data = cum_to_week(data)
+
       # training data
       for row, week in enumerate(train_weeks):
         sensor = self.data_source.get_sensor_value(week, loc, sen)
-        truth = self.data_source.get_truth_value(week, loc)
+        truth = w_data[week]
         if sensor is not None and truth is not None:
           sensor_noise[row, col] = sensor - truth
 
@@ -297,12 +303,18 @@ class Nowcast:
       week_inputs, week_noise, week_reading = self.get_sensor_data_for_week(
           inputs, noise, week, week_reading, exclude_locations)
 
+      # exclude locations where so far all reports have been the same (=0)
+      locs = np.array(week_inputs)
+      pos_std = np.nanstd(week_noise,axis=0)>0
+      exclude_locations = tuple(list(exclude_locations) + list(locs[np.logical_not(pos_std)]))
+      week_inputs = tuple(locs[pos_std])
+
       # generate the nowcast in all possible locations for this week
       season = Nowcast.get_season(week)
       nowcast = Nowcast.compute_nowcast(
           week_inputs,
-          week_noise,
-          week_reading,
+          week_noise[:,pos_std],
+          week_reading[pos_std],
           self.shrinkage,
           season=season,
           exclude_locations=exclude_locations)

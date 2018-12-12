@@ -231,9 +231,4 @@ def mle_cov(X, shrinkage_class):
   alpha, ll = maximize(low, high, objective, stop)
 
   # return the shrunk covariance matrix with maximum likelihood
-  result = shrinkage.get_cov(alpha)
-  if np.linalg.matrix_rank(result) < result.shape[0]:
-    result = np.diag(cov_num)/np.diag(cov_den)
-    result[result == 0] = 1
-    result = np.diag(result)
-  return result
+  return shrinkage.get_cov(alpha)

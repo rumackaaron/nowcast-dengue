@@ -74,9 +74,10 @@ class ISCH:
       self.i2ew[i] = ew
     epiweeks = list(map(lambda elt: elt['epiweek'], rx))
     values = list(map(lambda elt: elt[self.target], rx))
-    w_values = cum_to_week(epiweeks,values)
+    data = {elt['epiweek']: elt[self.target] for elt in rx}
+    w_data = cum_to_week(data)
     for i in range(len(rx)):
-      ew, observation = epiweeks[i], w_values[i]
+      ew, observation = epiweeks[i], w_data[epiweeks[i]]
       if ew not in self.ew2i:
         continue
       i = self.ew2i[ew]

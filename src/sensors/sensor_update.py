@@ -109,15 +109,9 @@ class SensorFitting:
         data[row['epiweek']] = float(row[field])
       if not to_weekly:
         return data
-
-      ews = list(data.keys())
-      c_vals = [data[ew] for ew in ews]
-      w_vals = cum_to_week(ews, c_vals)
-      data = {}
-      ews = sorted(ews)
-      for i in range(len(ews)):
-        data[ews[i]] = w_vals[i]
-      return data
+      else:
+        w_data = cum_to_week(data)
+        return w_data
 
     def get_training_set_data(data):
       epiweeks = sorted(list(data.keys()))

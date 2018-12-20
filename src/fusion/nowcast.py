@@ -114,11 +114,32 @@ class Nowcast:
     # determine statespace and estimate covariance
     H, W, output_locations = WestFusion.determine_statespace(
         input_locations, season=season, exclude_locations=exclude_locations)
-    R = covariance.mle_cov(noise, shrinkage)
+
+    is_posdef = False
+    idxs = np.ones((noise.shape[1]),dtype=bool)
+    idxs_bynancount = np.argsort(np.sum(np.isnan(noise),axis=0))
+    count = 0
+    while not is_posdef:
+        try:
+            R = covariance.mle_cov(noise[:,idxs], shrinkage)
+            is_posdef = np.all(np.linalg.eigvals(R) > 0)
+        except Exception:
+            is_posdef = False
+
+        if not is_posdef:
+            count += 1
+            idxs[idxs_bynancount[-count]] = False
+    print(count)
+    print(np.all(np.linalg.eigvals(R)>0))
+    out_mask = np.where(np.sum(H[idxs,:],axis=0)>0)[0]
+        
+    #if not np.all(np.linalg.eigvals(R) > 0): # Cov shrinkage failed
+    #    cov_num,cov_den = covariance.nancov(noise)
+    #    R = cov_num/np.amax(cov_den) # Treat missing data as 0
 
     # apply the sensor fusion kernel
-    x, P = fusion.fuse(reading, R, H)
-    y, S = fusion.extract(x, P, W)
+    x, P = fusion.fuse(reading[idxs], R, H[idxs,:][:,out_mask])
+    y, S = fusion.extract(x, P, W[out_mask,:][:,out_mask])
 
     # extract standard deviation vector from posterior covariance
     stdev = np.sqrt(np.diag(S))
@@ -306,7 +327,6 @@ class Nowcast:
       # exclude locations where so far all reports have been the same (=0)
       locs = np.array(week_inputs)
       pos_std = np.nanstd(week_noise,axis=0)>0
-      exclude_locations = tuple(list(exclude_locations) + list(locs[np.logical_not(pos_std)]))
       week_inputs = tuple(locs[pos_std])
 
       # generate the nowcast in all possible locations for this week

@@ -86,7 +86,10 @@ def log_likelihood(cov, data):
     log-likelihood in the range (-np.inf, 0)
   """
   mean = np.zeros(cov.shape[0])
-  return np.sum(scipy.stats.multivariate_normal.logpdf(data, mean, cov=cov))
+  try:
+    return np.sum(scipy.stats.multivariate_normal.logpdf(data, mean, cov=cov))
+  except Exception:
+    return -np.inf
 
 
 class ShrinkageMethod(metaclass=abc.ABCMeta):

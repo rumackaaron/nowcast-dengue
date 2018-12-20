@@ -99,7 +99,7 @@ class ISCH:
           w = self.i2ew[i-lag]
           raise Exception('missing unstable wILI (ew=%d|lag=%d)' % (w, lag))
         try:
-          X[0, 1 + lag] = self.data[i-lag-signal_to_truth_shift]['stable']
+          X[0, 1 + lag] = np.log(np.maximum(0.01,self.data[i-lag-signal_to_truth_shift]['stable']))
         except Exception:
           X[0, 1 + lag] = np.nan
     for holiday in range(4):
@@ -153,6 +153,7 @@ class ISCH:
         pass
     X = X[:r,:]
     Y = Y[:r,:]
+    Y = np.log(np.maximum(Y,0.01))
     self.model = ISCH.dot(np.linalg.inv(ISCH.dot(X.T, X)), X.T, Y)
     self.training_week = epiweek
     return (X, Y, self.model)
@@ -164,7 +165,7 @@ class ISCH:
       raise Exception('trained on future data')
     feature_indices = self.feature_indices(epiweek, signal_to_truth_shift=self.stts, valid=valid)
     X = self._get_features(epiweek, signal_to_truth_shift=self.stts, valid=valid, mask=feature_indices)
-    return float(ISCH.dot(X, self.model)[0, 0])
+    return min(100000,float(np.exp(ISCH.dot(X, self.model)[0, 0])))
 
 
 if __name__ == '__main__':

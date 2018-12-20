@@ -24,7 +24,7 @@ class DengueDataSource(DataSource):
   """The interface by which all input data is provided."""
 
   # the first epiweek for which we have ground truth dengue in all locations
-  FIRST_DATA_EPIWEEK = 201401
+  FIRST_DATA_EPIWEEK = 201427
 
   # Make sure all the regions in the paho_region_list have corresponding sensor value in table `dengue_sensors`
   # Todo: After determing, please move it to delphi.utils.geo.locations
